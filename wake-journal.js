@@ -41,11 +41,11 @@ function onSpeech(text,isFinal){
   if(!m)return;
   let extra=clean(t.slice(m.index+m[0].length)).replace(/^[,.!?\s]+/,'');
   startCommandMode(extra);
-  if(extra){if(isFinal)buffered=extra;timer();}
+  if(extra){buffered=isFinal?extra:'';timer();}
   return;
  }
  // Receive only final command segments to avoid duplicate interim words.
- if(isFinal){buffered=clean([buffered,t].filter(Boolean).join(' '));timer();}
+ if(isFinal){let phrase=trigger.exec(t);if(phrase)t=clean(t.slice(phrase.index+phrase[0].length)); if(t){buffered=clean([buffered,t].filter(Boolean).join(' '));timer();}}
  else{timer();ui('Listening to your instruction…');}
 }
 function listen(localGen){
