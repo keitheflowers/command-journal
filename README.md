@@ -1,1 +1,29 @@
-# command-journal
+# Command Journal v1 — phone-first MVP
+
+A working mobile-friendly, offline-first personal task journal prototype. No external runtime dependencies.
+
+## Features
+- Task register with area, priority, schedule, due date, next action, notes, complete/reopen
+- Today dashboard and overdue indicators
+- Morning notes and evening review with automatic carryover of open scheduled tasks
+- Immutable-style activity log entries and rollover counts
+- Simple voice-command interpreter with confirmation; native browser speech recognition when supported
+- Local browser storage and JSON backup/import
+- PWA install metadata and cache-first offline service worker
+
+## Run / deploy
+1. Upload the four app files (`index.html`, `manifest.webmanifest`, `sw.js`, `icon.svg`) to any **HTTPS static hosting service** (GitHub Pages, Cloudflare Pages, Netlify, etc.).
+2. Open the HTTPS URL on Android Chrome. Use Chrome menu → **Add to Home screen** / **Install app**.
+3. Add a task, complete it, perform your evening review, export a backup.
+
+A web server is needed for service workers and reliable installability. Opening `index.html` as `file://` may display the UI but can have storage/security restrictions and no PWA install.
+
+## Limitations
+- Local data only. No account sync, cloud database, authentication, server AI, Calendar access, or native Android notification scheduling yet.
+- SpeechRecognition availability and data processing depend on browser; it may require a network connection, and voice capture is not guaranteed offline.
+- The task interpreter is intentionally restricted to three commands and asks for confirmation. It is not an LLM.
+- The existing 6 AM/10 PM ChatGPT scheduled check-ins operate separately.
+- Do not use for confidential company data until authenticated storage, encryption, and work/personal boundaries are implemented.
+
+## Later Vector contract
+Tasks should eventually sync via an authenticated versioned API that supports unique IDs, append-only event history, per-user namespaces, explicit conflict handling, encrypted storage, and audited AI actions. Avoid embedding an AI provider in the journal's business logic.

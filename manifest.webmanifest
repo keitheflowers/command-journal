@@ -1,0 +1,1 @@
+{"name":"Command Journal","short_name":"Command","description":"Offline-first voice-ready task and daily journal","start_url":"./index.html","display":"standalone","background_color":"#0d0f14","theme_color":"#101218","icons":[{"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]}
