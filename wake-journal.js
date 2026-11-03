@@ -89,10 +89,13 @@ function toggle(){
 const panel=document.createElement('div');
 panel.className='panel';
 panel.innerHTML='<h2>Vector voice activation</h2><p class="hint">When enabled, say <strong>“Vector, open Journal”</strong>, then speak a task instruction. Pause to review proposed changes before saving. Works only while this page is open and active; Android may stop browser listening.</p><button id="wakeArm" class="btn alt" type="button">Enable hands-free</button><p id="wakeStatus" class="hint" role="status">Hands-free is off.</p>';
-const main=document.querySelector('main');
-main.insertBefore(panel,main.children[1]||null);
+const settings=document.getElementById('settings');
+const voiceSection=Array.from(settings.querySelectorAll('.panel')).find(p=>p.querySelector('h2')?.textContent==='Voice and notifications');
+if(voiceSection)voiceSection.insertAdjacentElement('afterbegin',panel);
+else settings.appendChild(panel);
+panel.style.marginTop='12px';
 button().addEventListener('click',toggle);
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&armed){disarm('App left foreground. Enable hands-free when you return.');}});
 window.addEventListener('pagehide',()=>{if(armed)disarm();});
-ui();
+ui('Voice settings loaded. Hands-free is off.');
 })();
