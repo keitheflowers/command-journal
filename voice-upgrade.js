@@ -16,6 +16,11 @@ function findTask(q){
 }
 function parse(raw){
   let line=raw.trim().replace(/[.!?]+$/g,'').replace(/^(?:hey\s+)?command journal[, :]*\s*/i,'').replace(/^(?:okay|ok|please)[, ]+/i,'');
+  // Android dictation sometimes hears "add task" as "attest".
+  // Confirm the recognized task title before saving.
+  line=line.replace(/^(?:attest|a test|at task|add test|a task|atask)\s+/i,'add task ');
+  line=line.replace(/([;,]\s*)(?:attest|a test|at task|add test|a task|atask)\s+/gi,'$1add task ');
+  line=line.replace(/\b(?:and|then|also)\s+(?:attest|a test|at task|add test|a task|atask)\s+/gi,' and add task ');
   line=line.replace(/\b(?:and|then|also)\s+(?=(?:add|create|make|schedule|complete|completed|finish|finished|mark|move|reschedule|push)\b)/gi,'; ');
   line=line.replace(/[,;]\s*(?=(?:add|create|make|schedule|complete|completed|finish|finished|mark|move|reschedule|push)\b)/gi,'; ');
   line=line.replace(/\s+(?=(?:add|create|make|schedule|complete|completed|finish|finished|mark|move|reschedule|push)\s+(?:a\s+)?(?:task\b|my\b|the\b))/gi,'; ');
