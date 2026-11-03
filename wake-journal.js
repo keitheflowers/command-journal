@@ -64,8 +64,9 @@ function listen(localGen){
  };
  r.onerror=e=>{
   if(localGen!==gen)return;
-  if(['not-allowed','service-not-allowed','audio-capture'].includes(e.error)){disarm('Microphone access unavailable. Re-enable hands-free after granting permission.');return;}
-  if(e.error==='network'){disarm('Speech service unavailable. Use the normal Voice update button.');return;}
+  if(['not-allowed','service-not-allowed','audio-capture'].includes(e.error)){disarm('Activation failed ('+e.error+'). Open Journal in Chrome and allow microphone permission for this site.');return;}
+  if(e.error==='network'){disarm('Activation failed (network). Browser speech service unavailable; try Chrome with internet access.');return;}
+  if(e.error!=='no-speech'&&e.error!=='aborted')ui('Speech recognition error: '+e.error+'. Retrying…');
  };
  r.onend=()=>{
   if(localGen!==gen)return;
@@ -73,15 +74,15 @@ function listen(localGen){
   if(!armed)return;
   if(commandMode&&buffered)timer();
   if(document.hidden)return;
-  if(++retries>12){disarm('Android stopped the listener repeatedly. Tap Enable hands-free to retry.');return;}
+  if(++retries>12){disarm('Android repeatedly stopped speech recognition. Try opening Journal in Chrome; browser wake detection may be unsupported.');return;}
   restart=setTimeout(()=>{try{listen(localGen)}catch(_){disarm('Browser requires another tap to restart listening.');}},350);
  };
- try{r.start();ui();}catch(_){disarm('Browser blocked hands-free listening. Tap Enable hands-free to retry.');}
+ try{r.start();ui('Starting microphone… Say “Vector, open Journal” when permission is granted.');}catch(e){disarm('Activation failed ('+(e.name||'start blocked')+'). Open Journal in Chrome and allow the microphone.');}
 }
 function toggle(){
  if(armed){disarm();return;}
- if(!SR){ui('This Android browser does not support speech recognition.');return;}
- if(!window.isSecureContext){ui('Hands-free needs a secure HTTPS connection.');return;}
+ if(!SR){ui('Activation unavailable: this browser lacks SpeechRecognition. Open Journal in Chrome.');return;}
+ if(!window.isSecureContext){ui('Activation unavailable: open Journal using its secure HTTPS address.');return;}
  armed=true;commandMode=false;buffered='';retries=0;gen++;
  try{listen(gen);}catch(_){disarm('Unable to start microphone.');}
 }
