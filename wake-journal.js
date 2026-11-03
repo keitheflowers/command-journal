@@ -12,8 +12,8 @@ const status=()=>document.getElementById('wakeStatus');
 const button=()=>document.getElementById('wakeArm');
 const clean=t=>String(t||'').trim();
 function ui(msg){
- if(button()){button.textContent=armed?'Disable hands-free':'Enable hands-free';button.setAttribute('aria-pressed',String(armed));}
- if(status())status.textContent=msg||(armed?(commandMode?'Journal listening for your instructions…':'Waiting for “Vector, open Journal”…'):'Hands-free is off.');
+ if(button()){button().textContent=armed?'Disable hands-free':'Enable hands-free';button().setAttribute('aria-pressed',String(armed));}
+ if(status())status().textContent=msg||(armed?(commandMode?'Journal listening for your instructions…':'Waiting for “Vector, open Journal”…'):'Hands-free is off.');
 }
 function cancelTimer(){if(silenceTimer)clearTimeout(silenceTimer);silenceTimer=null;}
 function stopRecognition(){if(recognizer){let r=recognizer;recognizer=null;try{r.abort();}catch(_){}}}
@@ -99,5 +99,5 @@ button().addEventListener('click',toggle);
 button().addEventListener('pointerdown',()=>{if(status())status().textContent='Touch detected. Release to activate microphone.';});
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&armed){disarm('App left foreground. Enable hands-free when you return.');}});
 window.addEventListener('pagehide',()=>{if(armed)disarm();});
-ui('Voice activation diagnostic v9 loaded. Hands-free is off.');
+ui('Voice activation v10 loaded. Hands-free is off.');
 })();
