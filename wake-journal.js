@@ -6,7 +6,7 @@
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 const trigger=/\bvector\s+(?:open|opened|opening)\s+journal\b/i;
 let armed=false,active=false,recognizer=null,restart=null,retries=0,gen=0;
-let buffered='',recognized='',silenceTimer=null,commandMode=false;
+let buffered='',recognized='',silenceTimer=null,commandMode=false,tapCount=0;
 const input=()=>document.getElementById('command');
 const status=()=>document.getElementById('wakeStatus');
 const button=()=>document.getElementById('wakeArm');
@@ -80,6 +80,7 @@ function listen(localGen){
  try{r.start();ui('Starting microphone… Say “Vector, open Journal” when permission is granted.');}catch(e){disarm('Activation failed ('+(e.name||'start blocked')+'). Open Journal in Chrome and allow the microphone.');}
 }
 function toggle(){
+ tapCount++;ui('Button press '+tapCount+' detected. Testing speech recognition…');
  if(armed){disarm();return;}
  if(!SR){ui('Activation unavailable: this browser lacks SpeechRecognition. Open Journal in Chrome.');return;}
  if(!window.isSecureContext){ui('Activation unavailable: open Journal using its secure HTTPS address.');return;}
@@ -95,7 +96,8 @@ if(voiceSection)voiceSection.insertAdjacentElement('afterbegin',panel);
 else settings.appendChild(panel);
 panel.style.marginTop='12px';
 button().addEventListener('click',toggle);
+button().addEventListener('pointerdown',()=>{if(status())status().textContent='Touch detected. Release to activate microphone.';});
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&armed){disarm('App left foreground. Enable hands-free when you return.');}});
 window.addEventListener('pagehide',()=>{if(armed)disarm();});
-ui('Voice settings loaded. Hands-free is off.');
+ui('Voice activation diagnostic v9 loaded. Hands-free is off.');
 })();
