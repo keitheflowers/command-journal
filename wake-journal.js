@@ -4,7 +4,7 @@
 (function(){
 'use strict';
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-const trigger=/\bvector\s+(?:open|opened|opening)\s+journal\b/i;
+const trigger=/\b(?:vector|victor|vektor|vecter|hector)[\s,.!]+(?:open|opened|opening|opens)\s+(?:the\s+|my\s+)?(?:journal|journals|general)\b/i;
 let armed=false,active=false,recognizer=null,restart=null,retries=0,gen=0;
 let buffered='',recognized='',silenceTimer=null,commandMode=false,tapCount=0;
 const input=()=>document.getElementById('command');
@@ -38,7 +38,7 @@ function onSpeech(text,isFinal){
  let t=clean(text);if(!t)return;
  if(!commandMode){
   let m=trigger.exec(t);
-  if(!m)return;
+  if(!m){ui('Heard: “'+t+'” — waiting for “Vector, open Journal”…');return;}
   let extra=clean(t.slice(m.index+m[0].length)).replace(/^[,.!?\s]+/,'');
   startCommandMode(extra);
   if(extra){buffered=isFinal?extra:'';timer();}
@@ -99,5 +99,5 @@ button().addEventListener('click',toggle);
 button().addEventListener('pointerdown',()=>{if(status())status().textContent='Touch detected. Release to activate microphone.';});
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&armed){disarm('App left foreground. Enable hands-free when you return.');}});
 window.addEventListener('pagehide',()=>{if(armed)disarm();});
-ui('Voice activation v10 loaded. Hands-free is off.');
+ui('Voice activation v11 loaded. Hands-free is off.');
 })();
