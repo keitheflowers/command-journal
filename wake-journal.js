@@ -6,7 +6,10 @@
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 const trigger=/\b(?:vector|victor|vektor|vecter|hector)[\s,.!]+(?:open|opened|opening|opens)\s+(?:the\s+|my\s+)?(?:journal|journals|general)\b/i;
 let armed=false,active=false,recognizer=null,restart=null,retries=0,gen=0;
-let buffered='',recognized='',silenceTimer=null,commandMode=false,tapCount=0;
+let buffered='',recognized='',silenceTimer=null,commandMode=false,autoTry=false;
+const PREF='wakeAuto';
+function autoPref(){try{return localStorage.getItem(PREF)!=='0';}catch(_){return true;}}
+function setAutoPref(on){try{localStorage.setItem(PREF,on?'1':'0');}catch(_){}}
 const input=()=>document.getElementById('command');
 const status=()=>document.getElementById('wakeStatus');
 const button=()=>document.getElementById('wakeArm');
@@ -64,6 +67,7 @@ function listen(localGen){
  };
  r.onerror=e=>{
   if(localGen!==gen)return;
+  if(e.error==='not-allowed'&&autoTry){autoTry=false;disarm('Chrome needs one tap first. Tap anywhere to start hands-free.');waitForTap();return;}
   if(['not-allowed','service-not-allowed','audio-capture'].includes(e.error)){disarm('Activation failed ('+e.error+'). Open Journal in Chrome and allow microphone permission for this site.');return;}
   if(e.error==='network'){disarm('Activation failed (network). Browser speech service unavailable; try Chrome with internet access.');return;}
   if(e.error!=='no-speech'&&e.error!=='aborted')ui('Speech recognition error: '+e.error+'. Retrying…');
@@ -79,14 +83,28 @@ function listen(localGen){
  };
  try{r.start();ui('Starting microphone… Say “Vector, open Journal” when permission is granted.');}catch(e){disarm('Activation failed ('+(e.name||'start blocked')+'). Open Journal in Chrome and allow the microphone.');}
 }
-function toggle(){
- tapCount++;ui('Button press '+tapCount+' detected. Testing speech recognition…');
- if(armed){disarm();return;}
+function arm(auto){
+ if(armed)return;
  if(!SR){ui('Activation unavailable: this browser lacks SpeechRecognition. Open Journal in Chrome.');return;}
  if(!window.isSecureContext){ui('Activation unavailable: open Journal using its secure HTTPS address.');return;}
- armed=true;commandMode=false;buffered='';retries=0;gen++;
- try{listen(gen);}catch(_){disarm('Unable to start microphone.');}
+ autoTry=!!auto;armed=true;commandMode=false;buffered='';retries=0;gen++;
+ try{listen(gen);}catch(_){disarm('Unable to start microphone.');if(auto)waitForTap();}
 }
+function toggle(){
+ if(armed){setAutoPref(false);disarm('Hands-free is off. It will stay off until you enable it again.');return;}
+ setAutoPref(true);arm(false);
+}
+let tapWaiting=false;
+function waitForTap(){
+ if(tapWaiting)return;tapWaiting=true;
+ const go=e=>{
+  document.removeEventListener('pointerup',go,true);tapWaiting=false;
+  if(e.target&&e.target.closest&&e.target.closest('#wakeArm'))return; // button handles itself
+  if(autoPref()&&!armed&&!document.hidden)arm(false);
+ };
+ document.addEventListener('pointerup',go,true);
+}
+function autoStart(){if(autoPref()&&!armed&&!document.hidden)arm(true);}
 const panel=document.createElement('div');
 panel.className='panel';
 panel.innerHTML='<h2>Vector voice activation</h2><p class="hint">When enabled, say <strong>“Vector, open Journal”</strong>, then speak a task instruction. Pause to review proposed changes before saving. Works only while this page is open and active; Android may stop browser listening.</p><button id="wakeArm" class="btn alt" type="button">Enable hands-free</button><p id="wakeStatus" class="hint" role="status">Hands-free is off.</p>';
@@ -96,8 +114,8 @@ if(voiceSection)voiceSection.insertAdjacentElement('afterbegin',panel);
 else settings.appendChild(panel);
 panel.style.marginTop='12px';
 button().addEventListener('click',toggle);
-button().addEventListener('pointerdown',()=>{if(status())status().textContent='Touch detected. Release to activate microphone.';});
-document.addEventListener('visibilitychange',()=>{if(document.hidden&&armed){disarm('App left foreground. Enable hands-free when you return.');}});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){if(armed)disarm('App left foreground.');}else autoStart();});
 window.addEventListener('pagehide',()=>{if(armed)disarm();});
-ui('Voice activation v11 loaded. Hands-free is off.');
+ui('Voice activation v12 loaded.'+(autoPref()?' Starting hands-free…':' Hands-free is off.'));
+setTimeout(autoStart,300);
 })();
