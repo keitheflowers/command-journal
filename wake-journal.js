@@ -6,7 +6,7 @@
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 const trigger=/\b(?:vector|victor|vektor|vecter|hector)[\s,.!]+(?:open|opened|opening|opens)\s+(?:the\s+|my\s+)?(?:journal|journals|general)\b/i;
 let armed=false,active=false,recognizer=null,restart=null,retries=0,gen=0;
-let buffered='',recognized='',silenceTimer=null,commandMode=false,autoTry=false;
+let lastHeard='',buffered='',recognized='',silenceTimer=null,commandMode=false,autoTry=false;
 const PREF='wakeAuto';
 function autoPref(){try{return localStorage.getItem(PREF)!=='0';}catch(_){return true;}}
 function setAutoPref(on){try{localStorage.setItem(PREF,on?'1':'0');}catch(_){}}
@@ -18,6 +18,7 @@ function ui(msg){
  if(button()){button().textContent=armed?'Disable hands-free':'Enable hands-free';button().setAttribute('aria-pressed',String(armed));}
  if(status())status().textContent=msg||(armed?(commandMode?'Journal listening for your instructions…':'Waiting for “Vector, open Journal”…'):'Hands-free is off.');
 }
+function waitMsg(){return '🎙 Listening. Say “Vector, open Journal”.'+(lastHeard?' Last heard: “'+lastHeard+'”':'');}
 function cancelTimer(){if(silenceTimer)clearTimeout(silenceTimer);silenceTimer=null;}
 function stopRecognition(){if(recognizer){let r=recognizer;recognizer=null;try{r.abort();}catch(_){}}}
 function disarm(msg){armed=false;commandMode=false;active=false;gen++;clearTimeout(restart);cancelTimer();stopRecognition();ui(msg||'Hands-free is off.');}
@@ -41,7 +42,7 @@ function onSpeech(text,isFinal){
  let t=clean(text);if(!t)return;
  if(!commandMode){
   let m=trigger.exec(t);
-  if(!m){ui('Heard: “'+t+'” — waiting for “Vector, open Journal”…');return;}
+  if(!m){if(isFinal){lastHeard=t;ui(waitMsg());}return;}
   let extra=clean(t.slice(m.index+m[0].length)).replace(/^[,.!?\s]+/,'');
   startCommandMode(extra);
   if(extra){buffered=isFinal?extra:'';timer();}
@@ -55,13 +56,13 @@ function listen(localGen){
  if(!armed||localGen!==gen||document.hidden)return;
  let r=new SR();recognizer=r;active=true;
  r.lang='en-US';r.continuous=true;r.interimResults=true;r.maxAlternatives=1;
- let seen=0;
+ let seen=0,startedAt=Date.now();
  r.onresult=e=>{
   if(!armed||localGen!==gen)return;
   // Browser results include full session; process finalized results just once.
   for(let i=seen;i<e.results.length;i++){
    if(e.results[i].isFinal){onSpeech(e.results[i][0].transcript,true);seen=i+1;}
-   else{let interim=e.results[i][0].transcript; if(trigger.test(interim)&&!commandMode)onSpeech(interim,false);else if(commandMode)timer();}
+   else{let interim=e.results[i][0].transcript; if(trigger.test(interim)&&!commandMode)onSpeech(interim,false);else if(commandMode)timer();else ui('🎙 Hearing: “'+clean(interim)+'”');}
   }
   retries=0;
  };
@@ -78,10 +79,13 @@ function listen(localGen){
   if(!armed)return;
   if(commandMode&&buffered)timer();
   if(document.hidden)return;
+  // Only count rapid failures; normal silence timeouts restart indefinitely.
+  if(Date.now()-startedAt>1500)retries=0;
   if(++retries>12){disarm('Android repeatedly stopped speech recognition. Try opening Journal in Chrome; browser wake detection may be unsupported.');return;}
   restart=setTimeout(()=>{try{listen(localGen)}catch(_){disarm('Browser requires another tap to restart listening.');}},350);
  };
- try{r.start();ui('Starting microphone… Say “Vector, open Journal” when permission is granted.');}catch(e){disarm('Activation failed ('+(e.name||'start blocked')+'). Open Journal in Chrome and allow the microphone.');}
+ r.onstart=()=>{if(localGen===gen&&armed&&!commandMode)ui(waitMsg());};
+ try{r.start();if(!retries)ui('Starting microphone…');}catch(e){disarm('Activation failed ('+(e.name||'start blocked')+'). Open Journal in Chrome and allow the microphone.');}
 }
 function arm(auto){
  if(armed)return;
@@ -116,6 +120,6 @@ panel.style.marginTop='12px';
 button().addEventListener('click',toggle);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){if(armed)disarm('App left foreground.');}else autoStart();});
 window.addEventListener('pagehide',()=>{if(armed)disarm();});
-ui('Voice activation v12 loaded.'+(autoPref()?' Starting hands-free…':' Hands-free is off.'));
+ui('Voice activation v13 loaded.'+(autoPref()?' Starting hands-free…':' Hands-free is off.'));
 setTimeout(autoStart,300);
 })();
