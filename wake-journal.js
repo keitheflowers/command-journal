@@ -40,8 +40,11 @@ function say(text){
  try{
   speechSynthesis.cancel();
   const u=new SpeechSynthesisUtterance(text);u.lang='en-US';u.rate=1.05;
-  quietUntil=Date.now()+Math.min(12000,1500+text.length*75); // fallback if onend never fires
-  u.onend=u.onerror=()=>{quietUntil=Date.now()+1200;};
+  // Only go deaf once speech has actually started: Chrome may block speech
+  // without a tap, and then the mic must keep listening for "confirm".
+  u.onstart=()=>{quietUntil=Date.now()+Math.min(12000,1500+text.length*75);};
+  u.onend=()=>{quietUntil=Date.now()+800;};
+  u.onerror=()=>{quietUntil=0;};
   speechSynthesis.speak(u);
  }catch(_){}
 }
@@ -171,6 +174,6 @@ panel.style.marginTop='12px';
 button().addEventListener('click',toggle);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){if(armed)disarm('App left foreground.');}else autoStart();});
 window.addEventListener('pagehide',()=>{if(armed)disarm();});
-ui('Voice activation v15 loaded.'+(autoPref()?' Starting hands-free…':' Hands-free is off.'));
+ui('Voice activation v16 loaded.'+(autoPref()?' Starting hands-free…':' Hands-free is off.'));
 setTimeout(autoStart,300);
 })();
