@@ -6,7 +6,7 @@
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 const trigger=/\b(?:vector|victor|vektor|vecter|hector)[\s,.!]+(?:open|opened|opening|opens)\s+(?:the\s+|my\s+)?(?:journal|journals|general)\b/i;
 let armed=false,active=false,recognizer=null,restart=null,retries=0,gen=0;
-let confirmUntil=0,quietUntil=0,lastHeard='',buffered='',recognized='',silenceTimer=null,commandMode=false,autoTry=false;
+let session=false,sessionTimer=null,lastSaid='',confirmUntil=0,quietUntil=0,lastHeard='',buffered='',recognized='',silenceTimer=null,commandMode=false,autoTry=false;
 const PREF='wakeAuto';
 function autoPref(){try{return localStorage.getItem(PREF)!=='0';}catch(_){return true;}}
 function setAutoPref(on){try{localStorage.setItem(PREF,on?'1':'0');}catch(_){}}
@@ -14,7 +14,17 @@ const input=()=>document.getElementById('command');
 const status=()=>document.getElementById('wakeStatus');
 const button=()=>document.getElementById('wakeArm');
 const clean=t=>String(t||'').trim();
+const pill=document.createElement('div');pill.id='wakePill';pill.setAttribute('aria-hidden','true');
+const pillCss=document.createElement('style');pillCss.textContent='#wakePill{position:fixed;top:6px;left:50%;transform:translateX(-50%);z-index:20;font-size:11.5px;font-weight:700;padding:6px 12px;border-radius:20px;background:#0b1a28ee;border:1px solid #1f5a78;color:#9fd9ec;white-space:nowrap;max-width:94%;overflow:hidden;text-overflow:ellipsis;pointer-events:none;transition:opacity .2s}#wakePill.live{background:linear-gradient(135deg,#46d9f5,#5b7cff);color:#03101a;border-color:transparent;box-shadow:0 0 18px #46d9f566}#wakePill.off{opacity:0}';
+document.head.appendChild(pillCss);document.body.appendChild(pill);
+function updatePill(){
+ if(!armed){pill.className='off';return;}
+ if(Date.now()<confirmUntil&&hasPending()){pill.className='live';pill.textContent='🎙 Say “confirm” or “cancel”';return;}
+ if(commandMode){pill.className='live';pill.textContent='🎙 Listening… say a task, or “that’s all”';return;}
+ pill.className='';pill.textContent='🎙 Say “Vector, open Journal”';
+}
 function ui(msg){
+ setTimeout(updatePill,0);
  if(button()){button().textContent=armed?'Disable hands-free':'Enable hands-free';button().setAttribute('aria-pressed',String(armed));}
  if(status())status().textContent=msg||(armed?(commandMode?'Journal listening for your instructions…':'Waiting for “Vector, open Journal”…'):'Hands-free is off.');
 }
@@ -39,6 +49,7 @@ function say(text){
  if(!window.speechSynthesis||!window.SpeechSynthesisUtterance)return;
  try{
   speechSynthesis.cancel();
+  lastSaid=text;
   const u=new SpeechSynthesisUtterance(text);u.lang='en-US';u.rate=1.2;
   // Only go deaf once speech has actually started: Chrome may block speech
   // without a tap, and then the mic must keep listening for "confirm".
@@ -58,6 +69,7 @@ function startConfirm(){
  const b=previewBox();
  if(b&&!b.querySelector('.voice-confirm')){const p=document.createElement('p');p.className='voice-confirm';p.textContent='🎙 Say “confirm” to save or “cancel” to discard.';b.appendChild(p);}
  const items=Array.from(b.querySelectorAll('li')).map(li=>spoken(li.textContent));
+ try{b.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){}
  say(items.join('. ')+'.');
  ui('Waiting for “confirm” or “cancel”…');
 }
@@ -68,18 +80,29 @@ function quickReply(t){
  const items=Array.from(previewBox()?.querySelectorAll('li')||[]).map(li=>li.textContent.toLowerCase()).join(' ');
  return !new RegExp('\\b'+w+'\\b').test(items); // never a word Journal itself is reading aloud
 }
+const END=/^(?:no|nope|that'?s all|that is all|that'?s it|i'?m done|all done|done|nothing|nothing else|no thanks|no thank you|close journal|goodbye|bye|stop listening)$/i;
+const norm=t=>t.toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+function isEcho(t){const a=norm(t),b=norm(lastSaid);return a.length>2&&b.includes(a);}
+function nextInSession(prompt){
+ // Stay open for another instruction instead of requiring the wake phrase again.
+ session=true;say(prompt);startCommandMode('');
+}
+function endSession(msg){
+ session=false;commandMode=false;buffered='';cancelTimer();clearTimeout(sessionTimer);
+ ui(msg||waitMsg());
+}
 function handleConfirm(t){
  if(!hasPending()){confirmUntil=0;return false;}
  const yes=YES.test(t),no=NO.test(t);
  if(yes===no)return false; // neither, or ambiguous: ignore
  confirmUntil=0;
- if(yes){window.applyPreview();say('Saved.');ui('Saved. Say “Vector, open Journal” for the next one.');}
- else{window.cancelVoicePreview();say('Cancelled.');ui('Cancelled. Say “Vector, open Journal” to try again.');}
+ if(yes){window.applyPreview();nextInSession('Saved. What else?');}
+ else{window.cancelVoicePreview();nextInSession('Cancelled. What else?');}
  return true;
 }
 function cancelTimer(){if(silenceTimer)clearTimeout(silenceTimer);silenceTimer=null;}
 function stopRecognition(){if(recognizer){let r=recognizer;recognizer=null;try{r.abort();}catch(_){}}}
-function disarm(msg){armed=false;commandMode=false;active=false;gen++;clearTimeout(restart);cancelTimer();stopRecognition();ui(msg||'Hands-free is off.');}
+function disarm(msg){armed=false;commandMode=false;session=false;clearTimeout(sessionTimer);active=false;gen++;clearTimeout(restart);cancelTimer();stopRecognition();ui(msg||'Hands-free is off.');}
 function execute(){
  cancelTimer();
  let command=clean(buffered);
@@ -88,12 +111,14 @@ function execute(){
   openView('today');input().value=command;
   if(typeof window.interpretCommand==='function')window.interpretCommand();
   if(hasPending())startConfirm();
-  else{say('Sorry, I couldn’t turn that into a change.');ui('Not understood. Say “Vector, open Journal” to try again.');}
- }else ui('No instruction heard. Say “Vector, open Journal” to try again.');
+  else nextInSession('Sorry, I didn’t catch that. Try again, or say that’s all.');
+ }else if(session)startCommandMode('');
+ else ui('No instruction heard. Say “Vector, open Journal” to try again.');
 }
 function startCommandMode(initial){
- commandMode=true;buffered=clean(initial);recognized='';openView('today');
- ui('Journal listening. Speak your instruction, then pause to preview.');
+ commandMode=true;session=true;buffered=clean(initial);recognized='';openView('today');
+ clearTimeout(sessionTimer);sessionTimer=setTimeout(()=>{if(commandMode&&!buffered)endSession('Journal closed after a quiet spell. Say “Vector, open Journal” to start again.');},30000);
+ ui('Journal listening. Give an instruction, pause to review, or say “that’s all”.');
  if(buffered)timer();
 }
 function timer(ms){cancelTimer();silenceTimer=setTimeout(execute,ms||2000);}
@@ -101,6 +126,7 @@ function onSpeech(text,isFinal){
  let t=clean(text);if(!t)return;
  if(!commandMode&&Date.now()<confirmUntil&&quickReply(t)){try{speechSynthesis.cancel();}catch(_){}quietUntil=0;if(handleConfirm(t))return;}
  if(Date.now()<quietUntil)return; // Journal is talking; don't hear itself
+ if(isFinal&&isEcho(t))return; // late transcript of Journal's own voice
  if(!commandMode&&isFinal&&Date.now()<confirmUntil&&!trigger.test(t)&&handleConfirm(t))return;
  if(!commandMode){
   let m=trigger.exec(t);
@@ -110,6 +136,8 @@ function onSpeech(text,isFinal){
   if(extra){buffered=isFinal?extra:'';timer(isFinal?1200:2000);}
   return;
  }
+ clearTimeout(sessionTimer);
+ if(isFinal&&!buffered&&END.test(t.toLowerCase().replace(/[^a-z' ]/g,'').replace(/\s+/g,' ').trim().replace(/^(?:ok(?:ay)?|no)\s+/,''))){say('Okay.');endSession();return;}
  // Receive only final command segments to avoid duplicate interim words.
  if(isFinal){let phrase=trigger.exec(t);if(phrase)t=clean(t.slice(phrase.index+phrase[0].length)); t=t.replace(/^[,.!?\s]+/,''); if(t){buffered=merge(buffered,t);timer(1200);}}
  else{timer();ui('Listening to your instruction…');}
@@ -173,7 +201,7 @@ function waitForTap(){
 function autoStart(){if(autoPref()&&!armed&&!document.hidden)arm(true);}
 const panel=document.createElement('div');
 panel.className='panel';
-panel.innerHTML='<h2>Vector voice activation</h2><p class="hint">Say <strong>“Vector, open Journal”</strong>, then your instruction. Journal reads back the change — say <strong>“confirm”</strong> to save or <strong>“cancel”</strong> to discard. Works only while this page is open and active; Android may stop browser listening.</p><button id="wakeArm" class="btn alt" type="button">Enable hands-free</button><p id="wakeStatus" class="hint" role="status">Hands-free is off.</p>';
+panel.innerHTML='<h2>Vector voice activation</h2><p class="hint">Say <strong>“Vector, open Journal”</strong>, then your instruction. Journal reads back the change — say <strong>“confirm”</strong> or <strong>“cancel”</strong>. It keeps listening for more until you say <strong>“that’s all”</strong>. Works only while this page is open and active; Android may stop browser listening.</p><button id="wakeArm" class="btn alt" type="button">Enable hands-free</button><p id="wakeStatus" class="hint" role="status">Hands-free is off.</p>';
 const settings=document.getElementById('settings');
 const voiceSection=Array.from(settings.querySelectorAll('.panel')).find(p=>p.querySelector('h2')?.textContent==='Voice and notifications');
 if(voiceSection)voiceSection.insertAdjacentElement('afterbegin',panel);
@@ -182,6 +210,6 @@ panel.style.marginTop='12px';
 button().addEventListener('click',toggle);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){if(armed)disarm('App left foreground.');}else autoStart();});
 window.addEventListener('pagehide',()=>{if(armed)disarm();});
-ui('Voice activation v20 loaded.'+(autoPref()?' Starting hands-free…':' Hands-free is off.'));
+ui('Voice activation v21 loaded.'+(autoPref()?' Starting hands-free…':' Hands-free is off.'));
 setTimeout(autoStart,300);
 })();
