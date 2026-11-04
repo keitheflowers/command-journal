@@ -39,7 +39,7 @@ function say(text){
  if(!window.speechSynthesis||!window.SpeechSynthesisUtterance)return;
  try{
   speechSynthesis.cancel();
-  const u=new SpeechSynthesisUtterance(text);u.lang='en-US';u.rate=1.05;
+  const u=new SpeechSynthesisUtterance(text);u.lang='en-US';u.rate=1.2;
   // Only go deaf once speech has actually started: Chrome may block speech
   // without a tap, and then the mic must keep listening for "confirm".
   u.onstart=()=>{quietUntil=Date.now()+Math.min(12000,1500+text.length*75);};
@@ -58,8 +58,15 @@ function startConfirm(){
  const b=previewBox();
  if(b&&!b.querySelector('.voice-confirm')){const p=document.createElement('p');p.className='voice-confirm';p.textContent='🎙 Say “confirm” to save or “cancel” to discard.';b.appendChild(p);}
  const items=Array.from(b.querySelectorAll('li')).map(li=>spoken(li.textContent));
- say(items.join('. ')+'. Say confirm or cancel.');
+ say(items.join('. ')+'.');
  ui('Waiting for “confirm” or “cancel”…');
+}
+const QUICK=/^(?:confirm|confirmed|cancel|yes|yeah|yep|no|nope|save it|never ?mind|go ahead|do it)$/;
+function quickReply(t){
+ const w=t.toLowerCase().replace(/[^a-z ]/g,'').trim();
+ if(!QUICK.test(w))return false;
+ const items=Array.from(previewBox()?.querySelectorAll('li')||[]).map(li=>li.textContent.toLowerCase()).join(' ');
+ return !new RegExp('\\b'+w+'\\b').test(items); // never a word Journal itself is reading aloud
 }
 function handleConfirm(t){
  if(!hasPending()){confirmUntil=0;return false;}
@@ -89,9 +96,10 @@ function startCommandMode(initial){
  ui('Journal listening. Speak your instruction, then pause to preview.');
  if(buffered)timer();
 }
-function timer(){cancelTimer();silenceTimer=setTimeout(execute,2600);}
+function timer(ms){cancelTimer();silenceTimer=setTimeout(execute,ms||2000);}
 function onSpeech(text,isFinal){
  let t=clean(text);if(!t)return;
+ if(!commandMode&&Date.now()<confirmUntil&&quickReply(t)){try{speechSynthesis.cancel();}catch(_){}quietUntil=0;if(handleConfirm(t))return;}
  if(Date.now()<quietUntil)return; // Journal is talking; don't hear itself
  if(!commandMode&&isFinal&&Date.now()<confirmUntil&&!trigger.test(t)&&handleConfirm(t))return;
  if(!commandMode){
@@ -99,11 +107,11 @@ function onSpeech(text,isFinal){
   if(!m){if(isFinal){lastHeard=t;ui(waitMsg());}return;}
   let extra=clean(t.slice(m.index+m[0].length)).replace(/^[,.!?\s]+/,'');
   startCommandMode(extra);
-  if(extra){buffered=isFinal?extra:'';timer();}
+  if(extra){buffered=isFinal?extra:'';timer(isFinal?1200:2000);}
   return;
  }
  // Receive only final command segments to avoid duplicate interim words.
- if(isFinal){let phrase=trigger.exec(t);if(phrase)t=clean(t.slice(phrase.index+phrase[0].length)); t=t.replace(/^[,.!?\s]+/,''); if(t){buffered=merge(buffered,t);timer();}}
+ if(isFinal){let phrase=trigger.exec(t);if(phrase)t=clean(t.slice(phrase.index+phrase[0].length)); t=t.replace(/^[,.!?\s]+/,''); if(t){buffered=merge(buffered,t);timer(1200);}}
  else{timer();ui('Listening to your instruction…');}
 }
 function listen(localGen){
@@ -116,7 +124,7 @@ function listen(localGen){
   // Browser results include full session; process finalized results just once.
   for(let i=seen;i<e.results.length;i++){
    if(e.results[i].isFinal){onSpeech(e.results[i][0].transcript,true);seen=i+1;}
-   else{let interim=e.results[i][0].transcript; if(trigger.test(interim)&&!commandMode)onSpeech(interim,false);else if(commandMode)timer();else ui('🎙 Hearing: “'+clean(interim)+'”');}
+   else{let interim=e.results[i][0].transcript; if(!commandMode&&Date.now()<confirmUntil&&quickReply(clean(interim)))onSpeech(interim,false);else if(trigger.test(interim)&&!commandMode)onSpeech(interim,false);else if(commandMode)timer();else ui('🎙 Hearing: “'+clean(interim)+'”');}
   }
   retries=0;
  };
@@ -136,7 +144,7 @@ function listen(localGen){
   // Only count rapid failures; normal silence timeouts restart indefinitely.
   if(Date.now()-startedAt>1500)retries=0;
   if(++retries>12){disarm('Android repeatedly stopped speech recognition. Try opening Journal in Chrome; browser wake detection may be unsupported.');return;}
-  restart=setTimeout(()=>{try{listen(localGen)}catch(_){disarm('Browser requires another tap to restart listening.');}},350);
+  restart=setTimeout(()=>{try{listen(localGen)}catch(_){disarm('Browser requires another tap to restart listening.');}},150);
  };
  r.onstart=()=>{if(localGen===gen&&armed&&!commandMode)ui(waitMsg());};
  try{r.start();if(!retries)ui('Starting microphone…');}catch(e){disarm('Activation failed ('+(e.name||'start blocked')+'). Open Journal in Chrome and allow the microphone.');}
@@ -174,6 +182,6 @@ panel.style.marginTop='12px';
 button().addEventListener('click',toggle);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){if(armed)disarm('App left foreground.');}else autoStart();});
 window.addEventListener('pagehide',()=>{if(armed)disarm();});
-ui('Voice activation v16 loaded.'+(autoPref()?' Starting hands-free…':' Hands-free is off.'));
+ui('Voice activation v17 loaded.'+(autoPref()?' Starting hands-free…':' Hands-free is off.'));
 setTimeout(autoStart,300);
 })();
