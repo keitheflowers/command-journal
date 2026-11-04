@@ -59,7 +59,8 @@ window.interpretCommand=function(){
   let result=parse(raw),actions=result.actions,errors=result.errors;pending=null;
   let box=document.getElementById('commandPreview');box.classList.remove('hidden');
   if(errors.length||!actions.length){box.innerHTML='<strong>No changes made.</strong><p class="hint">'+errors.map(esc).join('; ')+'</p>';return;}
-  let items=actions.map(a=>a.kind==='add'?'Add: '+a.title+' · '+a.date+' · '+a.priority+' · '+a.area:a.kind==='complete'?'Complete: '+a.title:'Move to tomorrow: '+a.title);
+  let when=d=>d===day()?'today':d===plusDays(day(),1)?'tomorrow':d;
+  let items=actions.map(a=>a.kind==='add'?'Add: '+a.title+' · '+when(a.date)+' · '+a.priority+' priority · '+a.area:a.kind==='complete'?'Complete: '+a.title:'Move to tomorrow: '+a.title);
   box.innerHTML='<strong>Review '+actions.length+' proposed change(s)</strong><ol>'+items.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ol><div class="actions"><button class="btn sm" onclick="applyPreview()">Confirm all changes</button><button class="btn alt sm" onclick="cancelVoicePreview()">Cancel</button></div><p class="hint">No changes occur before confirmation.</p>';
   pending={raw,actions};
 };

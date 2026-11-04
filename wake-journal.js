@@ -6,7 +6,7 @@
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 const trigger=/\b(?:vector|victor|vektor|vecter|hector)[\s,.!]+(?:open|opened|opening|opens)\s+(?:the\s+|my\s+)?(?:journal|journals|general)\b/i;
 let armed=false,active=false,recognizer=null,restart=null,retries=0,gen=0;
-let lastHeard='',buffered='',recognized='',silenceTimer=null,commandMode=false,autoTry=false;
+let confirmUntil=0,quietUntil=0,lastHeard='',buffered='',recognized='',silenceTimer=null,commandMode=false,autoTry=false;
 const PREF='wakeAuto';
 function autoPref(){try{return localStorage.getItem(PREF)!=='0';}catch(_){return true;}}
 function setAutoPref(on){try{localStorage.setItem(PREF,on?'1':'0');}catch(_){}}
@@ -29,6 +29,44 @@ function merge(prev,next){
  return clean(prev+' '+next);
 }
 function waitMsg(){return '🎙 Listening. Say “Vector, open Journal”.'+(lastHeard?' Last heard: “'+lastHeard+'”':'');}
+// ---- Hands-free confirmation -------------------------------------------
+const YES=/\b(?:confirm|confirmed|yes|yeah|yep|save|save it|do it|go ahead|approve|approved|sounds good)\b/i;
+const NO=/\b(?:cancel|cancelled|canceled|no|nope|never ?mind|discard|scrap that|delete that)\b/i;
+const previewBox=()=>document.getElementById('commandPreview');
+function hasPending(){const b=previewBox();return !!(b&&!b.classList.contains('hidden')&&b.querySelector('button[onclick="applyPreview()"]'));}
+function say(text){
+ // Read results aloud; ignore the microphone while speaking so it can't hear itself.
+ if(!window.speechSynthesis||!window.SpeechSynthesisUtterance)return;
+ try{
+  speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text);u.lang='en-US';u.rate=1.05;
+  quietUntil=Date.now()+Math.min(12000,1500+text.length*75); // fallback if onend never fires
+  u.onend=u.onerror=()=>{quietUntil=Date.now()+1200;};
+  speechSynthesis.speak(u);
+ }catch(_){}
+}
+function spoken(item){
+ let t=item.replace(/\s+·\s+/g,', ');
+ try{t=t.split(plusDays(day(),1)).join('tomorrow').split(day()).join('today');}catch(_){}
+ return t.replace(/,\s*Vector AI$/,'');
+}
+function startConfirm(){
+ confirmUntil=Date.now()+60000;
+ const b=previewBox();
+ if(b&&!b.querySelector('.voice-confirm')){const p=document.createElement('p');p.className='voice-confirm';p.textContent='🎙 Say “confirm” to save or “cancel” to discard.';b.appendChild(p);}
+ const items=Array.from(b.querySelectorAll('li')).map(li=>spoken(li.textContent));
+ say(items.join('. ')+'. Say confirm or cancel.');
+ ui('Waiting for “confirm” or “cancel”…');
+}
+function handleConfirm(t){
+ if(!hasPending()){confirmUntil=0;return false;}
+ const yes=YES.test(t),no=NO.test(t);
+ if(yes===no)return false; // neither, or ambiguous: ignore
+ confirmUntil=0;
+ if(yes){window.applyPreview();say('Saved.');ui('Saved. Say “Vector, open Journal” for the next one.');}
+ else{window.cancelVoicePreview();say('Cancelled.');ui('Cancelled. Say “Vector, open Journal” to try again.');}
+ return true;
+}
 function cancelTimer(){if(silenceTimer)clearTimeout(silenceTimer);silenceTimer=null;}
 function stopRecognition(){if(recognizer){let r=recognizer;recognizer=null;try{r.abort();}catch(_){}}}
 function disarm(msg){armed=false;commandMode=false;active=false;gen++;clearTimeout(restart);cancelTimer();stopRecognition();ui(msg||'Hands-free is off.');}
@@ -39,7 +77,8 @@ function execute(){
  if(command){
   openView('today');input().value=command;
   if(typeof window.interpretCommand==='function')window.interpretCommand();
-  ui('Review the proposed changes, then confirm. Wake listener is still armed.');
+  if(hasPending())startConfirm();
+  else{say('Sorry, I couldn’t turn that into a change.');ui('Not understood. Say “Vector, open Journal” to try again.');}
  }else ui('No instruction heard. Say “Vector, open Journal” to try again.');
 }
 function startCommandMode(initial){
@@ -50,6 +89,8 @@ function startCommandMode(initial){
 function timer(){cancelTimer();silenceTimer=setTimeout(execute,2600);}
 function onSpeech(text,isFinal){
  let t=clean(text);if(!t)return;
+ if(Date.now()<quietUntil)return; // Journal is talking; don't hear itself
+ if(!commandMode&&isFinal&&Date.now()<confirmUntil&&!trigger.test(t)&&handleConfirm(t))return;
  if(!commandMode){
   let m=trigger.exec(t);
   if(!m){if(isFinal){lastHeard=t;ui(waitMsg());}return;}
@@ -121,7 +162,7 @@ function waitForTap(){
 function autoStart(){if(autoPref()&&!armed&&!document.hidden)arm(true);}
 const panel=document.createElement('div');
 panel.className='panel';
-panel.innerHTML='<h2>Vector voice activation</h2><p class="hint">When enabled, say <strong>“Vector, open Journal”</strong>, then speak a task instruction. Pause to review proposed changes before saving. Works only while this page is open and active; Android may stop browser listening.</p><button id="wakeArm" class="btn alt" type="button">Enable hands-free</button><p id="wakeStatus" class="hint" role="status">Hands-free is off.</p>';
+panel.innerHTML='<h2>Vector voice activation</h2><p class="hint">Say <strong>“Vector, open Journal”</strong>, then your instruction. Journal reads back the change — say <strong>“confirm”</strong> to save or <strong>“cancel”</strong> to discard. Works only while this page is open and active; Android may stop browser listening.</p><button id="wakeArm" class="btn alt" type="button">Enable hands-free</button><p id="wakeStatus" class="hint" role="status">Hands-free is off.</p>';
 const settings=document.getElementById('settings');
 const voiceSection=Array.from(settings.querySelectorAll('.panel')).find(p=>p.querySelector('h2')?.textContent==='Voice and notifications');
 if(voiceSection)voiceSection.insertAdjacentElement('afterbegin',panel);
@@ -130,6 +171,6 @@ panel.style.marginTop='12px';
 button().addEventListener('click',toggle);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){if(armed)disarm('App left foreground.');}else autoStart();});
 window.addEventListener('pagehide',()=>{if(armed)disarm();});
-ui('Voice activation v14 loaded.'+(autoPref()?' Starting hands-free…':' Hands-free is off.'));
+ui('Voice activation v15 loaded.'+(autoPref()?' Starting hands-free…':' Hands-free is off.'));
 setTimeout(autoStart,300);
 })();
