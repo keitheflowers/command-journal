@@ -130,15 +130,28 @@ function parse(raw){
   return {actions,errors};
 }
 let pending=null;
-window.interpretCommand=function(){
+let seq=0;window.lastVectorReply='';
+window.interpretCommand=async function(){
   let raw=document.getElementById('command').value.trim();if(!raw)return toast('Speak or type an update.');
-  let result=parse(raw),actions=result.actions,errors=result.errors;pending=null;
+  pending=null;window.lastVectorReply='';
   let box=document.getElementById('commandPreview');box.classList.remove('hidden');
-  if(errors.length||!actions.length){box.innerHTML='<strong>No changes made.</strong><p class="hint">'+errors.map(esc).join('; ')+'</p>';return;}
+  let result=null,usedAI=false,my=++seq;
+  if(window.VectorAI&&window.VectorAI.enabled()&&navigator.onLine!==false){
+    box.innerHTML='<strong>🧠 Vector is thinking…</strong>';
+    try{result=await window.VectorAI.interpret(raw);usedAI=true;}catch(e){toast(e.message+' Using built-in rules.');}
+    if(my!==seq||document.getElementById('command').value.trim()!==raw)return; // superseded or edited meanwhile
+  }
+  if(!result)result=parse(raw);
+  let actions=result.actions,errors=result.errors,reply=result.reply||'';
+  if(!actions.length){
+    if(reply){window.lastVectorReply=reply;box.innerHTML='<strong>Vector</strong><p class="hint" style="font-size:14px;color:#e3eef6">'+esc(reply)+'</p>'+(errors.length?'<p class="hint">'+errors.map(esc).join('; ')+'</p>':'');return;}
+    box.innerHTML='<strong>No changes made.</strong><p class="hint">'+errors.map(esc).join('; ')+'</p>';return;
+  }
+  if(errors.length&&!usedAI){box.innerHTML='<strong>No changes made.</strong><p class="hint">'+errors.map(esc).join('; ')+'</p>';return;}
   let when=d=>{if(d===day())return 'today';if(d===plusDays(day(),1))return 'tomorrow';const [y,m,dd]=d.split('-').map(Number);const t=new Date(y,m-1,dd);return t.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:y===new Date().getFullYear()?undefined:'numeric'});};
   let $=c=>window.Finance?window.Finance.money(c):'$'+(c/100).toFixed(2);
   let items=actions.map(a=>a.kind==='txn'?(a.type==='income'?'Income: ':'Expense: ')+$(a.amount)+' · '+a.category+(a.note?' · '+a.note:'')+' · '+when(a.date):a.kind==='billpaid'?'Bill paid: '+a.title+' · '+$(a.amount)+' · '+when(a.date):a.kind==='add'?'Add: '+a.title+' · '+when(a.date)+(a.due?' · due '+when(a.due):'')+' · '+a.priority+' priority · '+a.area:a.kind==='complete'?'Complete: '+a.title:'Move to '+when(a.date)+': '+a.title);
-  box.innerHTML='<strong>Review '+actions.length+' proposed change(s)</strong><ol>'+items.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ol><div class="actions"><button class="btn sm" onclick="applyPreview()">Confirm all changes</button><button class="btn alt sm" onclick="cancelVoicePreview()">Cancel</button></div><p class="hint">No changes occur before confirmation.</p>';
+  box.innerHTML=(reply?'<p class="hint" style="margin:0 0 8px;color:#cdeefa">🧠 '+esc(reply)+'</p>':'')+(errors.length?'<p class="hint" style="margin:0 0 8px">Skipped: '+errors.map(esc).join('; ')+'</p>':'')+'<strong>Review '+actions.length+' proposed change(s)</strong><ol>'+items.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ol><div class="actions"><button class="btn sm" onclick="applyPreview()">Confirm all changes</button><button class="btn alt sm" onclick="cancelVoicePreview()">Cancel</button></div><p class="hint">No changes occur before confirmation.</p>';
   pending={raw,actions};
 };
 window.cancelVoicePreview=function(){pending=null;document.getElementById('commandPreview').classList.add('hidden');};

@@ -21,7 +21,8 @@ A web server is needed for service workers and reliable installability. Opening 
 ## Limitations
 - Local data only. No account sync, cloud database, authentication, server AI, Calendar access, or native Android notification scheduling yet.
 - SpeechRecognition availability and data processing depend on browser; it may require a network connection, and voice capture is not guaranteed offline.
-- The task interpreter is intentionally restricted to three commands and asks for confirmation. It is not an LLM.
+- The built-in interpreter understands a fixed set of phrasings (add / complete / move tasks with dates, money in/out, bills) and always asks for confirmation.
+- Optional **Vector AI** (Settings): with your own Anthropic API key, requests are sent to Claude (`claude-opus-5-5`) together with your open tasks, bills and this month's money summary, so free-form speech and questions work. The key is stored only in this browser (not in backups). Changes still require confirmation; the built-in rules are used when AI is off, offline, or fails. The official `@anthropic-ai/sdk` is vendored as a browser bundle in `vendor/`.
 - The existing 6 AM/10 PM ChatGPT scheduled check-ins operate separately.
 - Do not use for confidential company data until authenticated storage, encryption, and work/personal boundaries are implemented.
 

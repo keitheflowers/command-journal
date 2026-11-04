@@ -55,7 +55,14 @@ function findBill(text){
  const hits=fin().bills.filter(b=>{const bn=n(b.name);return bn===q||bn.includes(q)||q.includes(bn);});
  return hits.length===1?hits[0]:null;
 }
-window.Finance={addTxn,markBillPaid,findBill,guessCategory,money,
+function summary(m){
+ const f=fin(),tx=f.txns.filter(t=>monthOf(t.date)===m);
+ const byCat={};for(const t of tx)if(t.type==='expense')byCat[t.category]=(byCat[t.category]||0)+t.amount;
+ return {month:m,income:tx.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0),spent:tx.filter(t=>t.type==='expense').reduce((a,t)=>a+t.amount,0),byCategory:byCat,budgets:{...f.budgets},
+  bills:f.bills.map(b=>({id:b.id,name:b.name,amount:b.amount,dueDay:b.dueDay,category:b.category,paidThisMonth:!!b.paid?.[m]})),
+  recent:f.txns.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,15).map(t=>({date:t.date,type:t.type,amount:t.amount,category:t.category,note:t.note}))};
+}
+window.Finance={EXPENSE,INCOME,summary,addTxn,markBillPaid,findBill,guessCategory,money,
  billsDueOn:date=>fin().bills.filter(b=>billDue(b,monthOf(date))===date).map(b=>({name:b.name,amount:b.amount,paid:!!b.paid?.[monthOf(date)]}))};
 
 // ---- view -------------------------------------------------------------

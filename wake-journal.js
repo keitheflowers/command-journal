@@ -62,7 +62,8 @@ function say(text){
 function spoken(item){
  let t=item.replace(/\s+·\s+/g,', ');
  try{t=t.split(plusDays(day(),1)).join('tomorrow').split(day()).join('today');}catch(_){}
- return t.replace(/,\s*Vector AI$/,'');
+ try{for(const ar of AREAS)if(t.endsWith(', '+ar))return t.slice(0,-(ar.length+2));}catch(_){}
+ return t;
 }
 function startConfirm(){
  confirmUntil=Date.now()+60000;
@@ -109,9 +110,13 @@ function execute(){
  buffered='';recognized='';commandMode=false;
  if(command){
   openView('today');input().value=command;
-  if(typeof window.interpretCommand==='function')window.interpretCommand();
-  if(hasPending())startConfirm();
-  else nextInSession('Sorry, I didn’t catch that. Try again, or say that’s all.');
+  ui('🧠 Working on it…');
+  Promise.resolve(typeof window.interpretCommand==='function'&&window.interpretCommand()).catch(()=>{}).then(()=>{
+   if(!armed)return;
+   if(hasPending())startConfirm();
+   else if(window.lastVectorReply)nextInSession(window.lastVectorReply);
+   else nextInSession('Sorry, I didn’t catch that. Try again, or say that’s all.');
+  });
  }else if(session)startCommandMode('');
  else ui('No instruction heard. Say “Vector, open Journal” to try again.');
 }
@@ -210,6 +215,6 @@ panel.style.marginTop='12px';
 button().addEventListener('click',toggle);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){if(armed)disarm('App left foreground.');}else autoStart();});
 window.addEventListener('pagehide',()=>{if(armed)disarm();});
-ui('Voice activation v21 loaded.'+(autoPref()?' Starting hands-free…':' Hands-free is off.'));
+ui('Voice activation v22 loaded.'+(autoPref()?' Starting hands-free…':' Hands-free is off.'));
 setTimeout(autoStart,300);
 })();
