@@ -29,6 +29,7 @@ function parseWhen(text){
   const rules=[
     [/\bthe day after tomorrow\b|\bday after tomorrow\b/,()=>plusDays(day(),2)],
     [/\b(?:tomorrow|tmrw)\b/,()=>plusDays(day(),1)],
+    [/\byesterday\b/,()=>plusDays(day(),-1)],
     [/\b(?:today|tonight|this (?:morning|afternoon|evening))\b/,()=>day()],
     [/\bin (\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve) (days?|weeks?)\b/,m=>{let n=/\d/.test(m[1])?+m[1]:NUMW[m[1]];return plusDays(day(),n*(m[2][0]==='w'?7:1));}],
     [/\bnext week\b/,()=>{let d=new Date(Y,M,D);d.setDate(d.getDate()+((8-d.getDay())%7||7));return ds(d);}],
@@ -57,6 +58,34 @@ function parseWhen(text){
   return null;
 }
 window.parseSpokenDate=parseWhen;
+// ---- Spoken money ("spent 45 on groceries", "got paid 2,100", "paid the electric bill")
+const AMT=/\$\s?(\d[\d,]*(?:\.\d{1,2})?)|\b(\d[\d,]*(?:\.\d{1,2})?)\s*(?:dollars?|bucks)?(?:\s+and\s+(\d{1,2})\s+cents?)?\b/i;
+function takeAmount(text){
+  const m=text.match(AMT);if(!m)return null;
+  let n=parseFloat((m[1]||m[2]).replace(/,/g,''));if(m[3])n+=(+m[3])/100;
+  if(!(n>0)||n>10000000)return null;
+  return {cents:Math.round(n*100),text:(text.slice(0,m.index)+' '+text.slice(m.index+m[0].length)).replace(/\s+/g,' ').trim()};
+}
+const tidyNote=t=>t.replace(/^(?:on|for|at|from|to|in)\s+/i,'').replace(/\s+(?:on|for|at|from|to)$/i,'').replace(/^(?:the|my|a|an)\s+/i,'').replace(/[.,;]+$/,'').trim();
+function parseMoney(part){
+  if(!window.Finance)return null;
+  let m=part.match(/^(?:add|log|record)\s+(?:an?\s+)?(expense|income)\s+(?:of\s+)?(.+)$/i),type,rest,verb='';
+  if(m){type=m[1].toLowerCase();rest=m[2];}
+  else if((m=part.match(/^(spent|spend|paid|pay|bought|purchased)\s+(.+)$/i))){type='expense';verb=m[1].toLowerCase();rest=m[2];}
+  else if((m=part.match(/^(earned|received|got paid|get paid|made|deposited|got)\s+(.+)$/i))){type='income';verb=m[1].toLowerCase();rest=m[2];}
+  else return null;
+  let date=day(),w=parseWhen(rest);if(w&&!w.due){date=w.date;rest=w.text;}
+  const a=takeAmount(rest);
+  if(type==='expense'&&/^pa(?:id|y)$/.test(verb)){
+    const bill=window.Finance.findBill(tidyNote(a?a.text:rest));
+    if(bill)return {kind:'billpaid',id:bill.id,title:bill.name,amount:a?a.cents:bill.amount,date};
+  }
+  if(!a)return {error:'Say the amount, e.g. “spent 45 on groceries”'};
+  const note=tidyNote(a.text);
+  let category=window.Finance.guessCategory(note,type);
+  if(category==='Other income'&&/paid/.test(verb))category='Paycheck';
+  return {kind:'txn',type,amount:a.cents,note,category,date};
+}
 function parse(raw){
   let line=raw.trim().replace(/[.!?]+$/g,'').replace(/^(?:hey\s+)?command journal[, :]*\s*/i,'').replace(/^(?:okay|ok|please)[, ]+/i,'');
   // Android dictation sometimes hears "add task" as "attest".
@@ -64,13 +93,15 @@ function parse(raw){
   line=line.replace(/^(?:attest|a test|at task|add test|a task|atask)\s+/i,'add task ');
   line=line.replace(/([;,]\s*)(?:attest|a test|at task|add test|a task|atask)\s+/gi,'$1add task ');
   line=line.replace(/\b(?:and|then|also)\s+(?:attest|a test|at task|add test|a task|atask)\s+/gi,' and add task ');
-  line=line.replace(/\b(?:and|then|also)\s+(?=(?:add|create|make|schedule|complete|completed|finish|finished|mark|move|reschedule|push)\b)/gi,'; ');
-  line=line.replace(/[,;]\s*(?=(?:add|create|make|schedule|complete|completed|finish|finished|mark|move|reschedule|push)\b)/gi,'; ');
+  line=line.replace(/\b(?:and|then|also)\s+(?=(?:add|create|make|schedule|complete|completed|finish|finished|mark|move|reschedule|push|spent|paid|bought|earned|received|got paid|deposited)\b)/gi,'; ');
+  line=line.replace(/[,;]\s*(?=(?:add|create|make|schedule|complete|completed|finish|finished|mark|move|reschedule|push|spent|paid|bought|earned|received|got paid|deposited)\b)/gi,'; ');
   line=line.replace(/\s+(?=(?:add|create|make|schedule|complete|completed|finish|finished|mark|move|reschedule|push)\s+(?:a\s+)?(?:task\b|my\b|the\b))/gi,'; ');
   let parts=line.split(/\s*;\s*/).map(x=>x.trim()).filter(Boolean),actions=[],errors=[];
   if(parts.length>12)return {actions,errors:['Maximum 12 instructions per update']};
   for(let part of parts){
     part=part.replace(/^(?:i\s+)?(?:have\s+)?(?:just\s+)?(?:please\s+)?/i,'').trim();
+    let money=parseMoney(part);
+    if(money){if(money.error)errors.push(money.error);else actions.push(money);continue;}
     let done=part.match(/^(?:complete|completed|finish|finished|mark(?:\s+(?:as|it))?\s+(?:complete|done))\s+(?:the\s+|my\s+)?(?:task\s+)?(.+)$/i);
     if(!done){let m=part.match(/^update\s+(?:task\s+)?(.+?)\s+(?:as\s+)?(?:complete|completed|done)$/i);if(m)done=[part,m[1]];}
     let move=null,mv=part.match(/^(?:move|reschedule|push)\s+(?:the\s+|my\s+)?(?:task\s+)?(.+)$/i);
@@ -105,7 +136,8 @@ window.interpretCommand=function(){
   let box=document.getElementById('commandPreview');box.classList.remove('hidden');
   if(errors.length||!actions.length){box.innerHTML='<strong>No changes made.</strong><p class="hint">'+errors.map(esc).join('; ')+'</p>';return;}
   let when=d=>{if(d===day())return 'today';if(d===plusDays(day(),1))return 'tomorrow';const [y,m,dd]=d.split('-').map(Number);const t=new Date(y,m-1,dd);return t.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:y===new Date().getFullYear()?undefined:'numeric'});};
-  let items=actions.map(a=>a.kind==='add'?'Add: '+a.title+' · '+when(a.date)+(a.due?' · due '+when(a.due):'')+' · '+a.priority+' priority · '+a.area:a.kind==='complete'?'Complete: '+a.title:'Move to '+when(a.date)+': '+a.title);
+  let $=c=>window.Finance?window.Finance.money(c):'$'+(c/100).toFixed(2);
+  let items=actions.map(a=>a.kind==='txn'?(a.type==='income'?'Income: ':'Expense: ')+$(a.amount)+' · '+a.category+(a.note?' · '+a.note:'')+' · '+when(a.date):a.kind==='billpaid'?'Bill paid: '+a.title+' · '+$(a.amount)+' · '+when(a.date):a.kind==='add'?'Add: '+a.title+' · '+when(a.date)+(a.due?' · due '+when(a.due):'')+' · '+a.priority+' priority · '+a.area:a.kind==='complete'?'Complete: '+a.title:'Move to '+when(a.date)+': '+a.title);
   box.innerHTML='<strong>Review '+actions.length+' proposed change(s)</strong><ol>'+items.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ol><div class="actions"><button class="btn sm" onclick="applyPreview()">Confirm all changes</button><button class="btn alt sm" onclick="cancelVoicePreview()">Cancel</button></div><p class="hint">No changes occur before confirmation.</p>';
   pending={raw,actions};
 };
@@ -114,13 +146,15 @@ window.applyPreview=function(){
   if(!pending)return;
   let batch=pending;pending=null;
   if(document.getElementById('command').value.trim()!==batch.raw)return toast('Text changed; interpret again.');
-  for(let a of batch.actions){if(a.kind!=='add'&&!data.tasks.some(t=>t.id===a.id&&t.status!=='done'))return toast('Task changed; interpret again.');}
+  for(let a of batch.actions){if((a.kind==='complete'||a.kind==='move')&&!data.tasks.some(t=>t.id===a.id&&t.status!=='done'))return toast('Task changed; interpret again.');}
   for(let a of batch.actions){
-    if(a.kind==='complete'){let t=data.tasks.find(t=>t.id===a.id);t.status='done';t.completed=stamp();log('task_completed',t.id,t.title);}
+    if(a.kind==='txn'){window.Finance.addTxn({type:a.type,amount:a.amount,category:a.category,note:a.note,date:a.date});}
+    else if(a.kind==='billpaid'){window.Finance.markBillPaid(a.id,a.date,a.amount);}
+    else if(a.kind==='complete'){let t=data.tasks.find(t=>t.id===a.id);t.status='done';t.completed=stamp();log('task_completed',t.id,t.title);}
     else if(a.kind==='move'){let t=data.tasks.find(t=>t.id===a.id);t.scheduled=a.date;t.rollovers=(t.rollovers||0)+1;log('task_moved',t.id,t.title+' → '+a.date);}
     else{let t={id:uuid(),title:a.title,next:'',area:a.area,priority:a.priority,scheduled:a.date,due:a.due||'',notes:'Voice/text command: '+batch.raw,status:'open',created:stamp(),completed:null,rollovers:0};data.tasks.push(t);log('task_created',t.id,t.title);}
   }
-  document.getElementById('command').value='';document.getElementById('commandPreview').classList.add('hidden');persist();toast(batch.actions.length+' changes saved.');
+  document.getElementById('command').value='';document.getElementById('commandPreview').classList.add('hidden');persist();toast(batch.actions.length+(batch.actions.length===1?' change':' changes')+' saved.');
 };
 document.getElementById('command').addEventListener('input',()=>{pending=null;document.getElementById('commandPreview').classList.add('hidden');});
 })();

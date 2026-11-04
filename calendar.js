@@ -35,7 +35,7 @@ section.innerHTML=`<div class="panel"><div class="cal-head">
  <button class="btn alt sm" data-cal="next" aria-label="Next month">›</button>
  <button class="btn alt sm" data-cal="today">Today</button></div>
  <div class="cal-grid" id="calGrid" role="grid"></div>
- <p class="hint">Tap a day for its tasks. Tap a week number (W) for the whole week.</p></div>
+ <p class="hint">Tap a day for its tasks. Tap a week number (W) for the whole week. Yellow squares are unpaid bills.</p></div>
  <div class="panel"><div class="header"><h2 id="calListTitle"></h2><button class="btn sm" data-cal="add">+ Add</button></div><div id="calList"></div></div>`;
 const anchor=document.getElementById('settings');
 anchor.parentNode.insertBefore(section,anchor);
@@ -44,7 +44,7 @@ const tab=document.createElement('button');
 tab.className='tab';tab.dataset.view='calendar';tab.textContent='Calendar';
 const tabs=document.getElementById('tabs');
 tabs.insertBefore(tab,tabs.querySelector('[data-view="reviews"]'));
-tabs.style.gridTemplateColumns='repeat(5,1fr)';
+tabs.style.gridTemplateColumns=`repeat(${tabs.children.length},1fr)`;
 
 const css=document.createElement('style');
 css.textContent=`.cal-head{display:flex;align-items:center;gap:8px;margin-bottom:12px}.cal-head h2{flex:1;margin:0;text-align:center}
@@ -58,7 +58,7 @@ css.textContent=`.cal-head{display:flex;align-items:center;gap:8px;margin-bottom
 .cal-day.today .n{background:linear-gradient(135deg,#46d9f5,#5b7cff);color:#03101a;border-radius:20px;padding:1px 7px}
 .cal-dots{display:flex;gap:3px;flex-wrap:wrap;justify-content:center;max-width:90%}
 .cal-dots i{width:6px;height:6px;border-radius:50%;background:#46d9f5;display:block}
-.cal-dots i.hi{background:#ff6b9a}.cal-dots i.done{background:#3b4a5c}.cal-dots b{font-size:9px;color:#9fb3c6;font-weight:600}
+.cal-dots i.hi{background:#ff6b9a}.cal-dots i.bill{background:#f5c84b;border-radius:2px}.cal-dots i.done{background:#3b4a5c}.cal-dots b{font-size:9px;color:#9fb3c6;font-weight:600}
 .cal-row-sel .cal-day,.cal-row-sel.cal-wk{border-color:#2d6d8c;background:#0e2233}
 .cal-day.sel{border-color:#46d9f5;box-shadow:0 0 12px #46d9f544}
 .cal-wk.sel{background:#0f3149;border-color:#46d9f5;color:#fff}
@@ -83,6 +83,7 @@ function renderCalendar(){
    let dots='';const total=k.open+k.done;
    if(total>4)dots=`<b>${k.open}${k.done?' · '+k.done+'✓':''}</b>`;
    else{dots=('<i class="'+(k.high?'hi':'')+'"></i>').repeat(Math.min(k.open,1))+'<i></i>'.repeat(Math.max(0,k.open-1))+'<i class="done"></i>'.repeat(k.done);}
+   if(window.Finance&&window.Finance.billsDueOn(ds).some(x=>!x.paid))dots+='<i class="bill"></i>';
    const cls=['cal-day',d.getMonth()!==m?'other':'',ds===today?'today':'',sel.kind==='day'&&sel.date===ds?'sel':''].filter(Boolean).join(' ');
    html+=`<button class="${cls}" data-day="${ds}" aria-label="${fmtDay(ds)}, ${k.open} open task${k.open===1?'':'s'}"${rowSel?' style="border-color:#2d6d8c;background:#0e2233"':''}><span class="n">${d.getDate()}</span><span class="cal-dots">${dots}</span></button>`;
   }
@@ -90,9 +91,13 @@ function renderCalendar(){
  document.getElementById('calGrid').innerHTML=html;
  renderList();
 }
+function billsHtml(date){
+ const bills=window.Finance?window.Finance.billsDueOn(date):[];
+ return bills.map(b=>`<div class="task"><div class="task-top"><strong>💵 ${esc(b.name)} bill due</strong><span class="pill">${esc(window.Finance.money(b.amount))}${b.paid?' · Paid ✓':''}</span></div></div>`).join('');
+}
 function group(date,heading){
- const list=tasksOn(date);
- return `<div class="cal-daygroup">${heading?`<h3>${esc(fmtDay(date))}${date===day()?' · Today':''}</h3>`:''}${list.length?list.map(renderTask).join(''):'<div class="empty">No tasks.</div>'}</div>`;
+ const list=tasksOn(date),bills=billsHtml(date);
+ return `<div class="cal-daygroup">${heading?`<h3>${esc(fmtDay(date))}${date===day()?' · Today':''}</h3>`:''}${bills}${list.length?list.map(renderTask).join(''):(bills?'':'<div class="empty">No tasks.</div>')}</div>`;
 }
 function renderList(){
  const title=document.getElementById('calListTitle'),box=document.getElementById('calList');
