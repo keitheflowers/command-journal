@@ -1,5 +1,5 @@
-const CACHE='command-journal-v17-20261103';
-const ASSETS=['./','./index.html','./manifest.webmanifest','./icon.svg','./voice-upgrade.js','./voice-capture.js','./wake-journal.js?v=17'];
+const CACHE='command-journal-v18-20261103';
+const ASSETS=['./','./index.html','./manifest.webmanifest','./icon.svg','./voice-upgrade.js','./voice-capture.js','./calendar.js?v=1','./wake-journal.js?v=18'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)));self.skipWaiting()});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));self.clients.claim()});
 self.addEventListener('fetch',event=>{
