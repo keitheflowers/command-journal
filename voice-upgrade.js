@@ -14,6 +14,49 @@ function findTask(q){
   if(ranked[0]&&ranked[0].hits>=2&&ranked[0].score>=.7&&(!ranked[1]||ranked[0].score>ranked[1].score+.15))return {task:ranked[0].task};
   return {error:'Task not uniquely identified: '+q};
 }
+// ---- Spoken dates -----------------------------------------------------
+// Finds one date phrase ("Friday", "next Tuesday", "November 12th", "the 20th",
+// "in 3 days", "11/12", "due Friday") and returns it with the phrase removed.
+const DAYS=['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+const MON='(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+const NUMW={a:1,an:1,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12};
+const PRE='(?:\\b(on|for|by|due(?:\\s+on|\\s+by)?|to|until|till|at)\\s+)?';
+const ds=d=>day(d);
+function future(y,m,d){let t=new Date(y,m,d);if(ds(t)<day())t=new Date(y+1,m,d);return ds(t);}
+function monthIndex(w){return ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'].indexOf(w.slice(0,3).toLowerCase());}
+function parseWhen(text){
+  const now=new Date(),Y=now.getFullYear(),M=now.getMonth(),D=now.getDate();
+  const rules=[
+    [/\bthe day after tomorrow\b|\bday after tomorrow\b/,()=>plusDays(day(),2)],
+    [/\b(?:tomorrow|tmrw)\b/,()=>plusDays(day(),1)],
+    [/\b(?:today|tonight|this (?:morning|afternoon|evening))\b/,()=>day()],
+    [/\bin (\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve) (days?|weeks?)\b/,m=>{let n=/\d/.test(m[1])?+m[1]:NUMW[m[1]];return plusDays(day(),n*(m[2][0]==='w'?7:1));}],
+    [/\bnext week\b/,()=>{let d=new Date(Y,M,D);d.setDate(d.getDate()+((8-d.getDay())%7||7));return ds(d);}],
+    [/\b(?:this |next )?weekend\b/,m=>{let d=new Date(Y,M,D);let k=(6-d.getDay()+7)%7||7;if(/next/.test(m[0])&&k<7)k+=7;d.setDate(d.getDate()+k);return ds(d);}],
+    [new RegExp('\\b'+MON+'\\.? (\\d{1,2})(?:st|nd|rd|th)?(?:,? (\\d{4}))?\\b'),m=>m[3]?ds(new Date(+m[3],monthIndex(m[1]),+m[2])):future(Y,monthIndex(m[1]),+m[2])],
+    [new RegExp('\\b(?:the )?(\\d{1,2})(?:st|nd|rd|th)? of '+MON+'\\b'),m=>future(Y,monthIndex(m[2]),+m[1])],
+    [/\b(?:the )(\d{1,2})(?:st|nd|rd|th)\b/,m=>{let d=+m[1];let t=new Date(Y,M,d);if(ds(t)<day())t=new Date(Y,M+1,d);return ds(t);}],
+    [/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/,m=>m[3]?ds(new Date(m[3].length===2?2000+ +m[3]:+m[3],+m[1]-1,+m[2])):future(Y,+m[1]-1,+m[2])],
+    [new RegExp('\\b(this |next |this coming )?('+DAYS.join('|')+')\\b'),m=>{let t=DAYS.indexOf(m[2]),k=(t-now.getDay()+7)%7||7;if(/next/.test(m[1]||'')&&now.getDay()+k<=6)k+=7;return plusDays(day(),k);}]
+  ];
+  for(const [core,fn] of rules){
+    const re=new RegExp(PRE+'(?:'+core.source+')','i');
+    const m=text.match(re);if(!m)continue;
+    // Re-run the core alone to get its own capture groups.
+    const c=m[0].slice(m[1]?m[0].toLowerCase().indexOf(m[1].toLowerCase())+m[1].length:0).trim().toLowerCase().match(new RegExp(core.source,'i'));
+    const date=c&&fn(c);if(!date||!/^\d{4}-\d{2}-\d{2}$/.test(date))continue;
+    const due=/^(?:by|due)/i.test(m[1]||'');
+    let left=text.slice(0,m.index),right=text.slice(m.index+m[0].length);
+    // "Friday November 13" / "November 13, Friday": drop the redundant weekday too.
+    const wd='(?:'+DAYS.join('|')+')';
+    left=left.replace(new RegExp('(?:\\b(?:on|for)\\s+)?\\b'+wd+',?\\s*$','i'),'');
+    right=right.replace(new RegExp('^,?\\s*'+wd+'\\b','i'),'');
+    const rest=(left+' '+right).replace(/\s+/g,' ').trim();
+    return {date,due,text:rest};
+  }
+  return null;
+}
+window.parseSpokenDate=parseWhen;
 function parse(raw){
   let line=raw.trim().replace(/[.!?]+$/g,'').replace(/^(?:hey\s+)?command journal[, :]*\s*/i,'').replace(/^(?:okay|ok|please)[, ]+/i,'');
   // Android dictation sometimes hears "add task" as "attest".
@@ -30,23 +73,25 @@ function parse(raw){
     part=part.replace(/^(?:i\s+)?(?:have\s+)?(?:just\s+)?(?:please\s+)?/i,'').trim();
     let done=part.match(/^(?:complete|completed|finish|finished|mark(?:\s+(?:as|it))?\s+(?:complete|done))\s+(?:the\s+|my\s+)?(?:task\s+)?(.+)$/i);
     if(!done){let m=part.match(/^update\s+(?:task\s+)?(.+?)\s+(?:as\s+)?(?:complete|completed|done)$/i);if(m)done=[part,m[1]];}
-    let move=part.match(/^(?:move|reschedule|push)\s+(?:the\s+|my\s+)?(?:task\s+)?(.+?)\s+(?:to\s+)?tomorrow$/i);
+    let move=null,mv=part.match(/^(?:move|reschedule|push)\s+(?:the\s+|my\s+)?(?:task\s+)?(.+)$/i);
+    if(mv){let w=parseWhen(mv[1]);if(w)move=[part,w.text.replace(/\s+(?:to|until|till|for|on)$/i,'').trim(),w.date];else{errors.push('Say when to move it, e.g. “move '+mv[1]+' to Friday”');continue;}}
     let add=part.match(/^(?:add|create|make|schedule|remind me to)\s+(?:a\s+|the\s+)?(?:task\s+)?(?:for\s+)?(.+)$/i);
     if(done||move){
       let q=(done||move)[1].replace(/\s+(?:as\s+)?(?:complete|completed|done)$/i,'');
       let found=findTask(q);
-      if(found.task)actions.push({kind:done?'complete':'move',id:found.task.id,title:found.task.title,date:plusDays(day(),1)});
+      if(found.task)actions.push({kind:done?'complete':'move',id:found.task.id,title:found.task.title,date:move?move[2]:plusDays(day(),1)});
       else errors.push(found.error);
     }else if(add){
       let title=add[1].replace(/^for\s+tomorrow\s+to\s+/i,'').replace(/^tomorrow\s+to\s+/i,'').replace(/^to\s+/i,'');
-      let date=/\btomorrow\b/i.test(title)?plusDays(day(),1):day();
+      let date=day(),due='',w=parseWhen(title);
+      if(w){title=w.text;if(w.due)due=w.date;else date=w.date;}
       let p=title.match(/\bpriority\s+(high|medium|low)\b|\b(high|medium|low)\s+priority\b/i);
       let priority=p?(p[1]||p[2]):'Medium';priority=priority[0].toUpperCase()+priority.slice(1).toLowerCase();
-      title=title.replace(/\bpriority\s+(?:high|medium|low)\b/ig,'').replace(/\b(?:high|medium|low)\s+priority\b/ig,'').replace(/\b(?:for\s+)?(?:tomorrow|today)\b/ig,'').replace(/\s+/g,' ').trim().replace(/^(?:to\s+|for\s+)/i,'').replace(/[.,;]+$/,'');
+      title=title.replace(/\bpriority\s+(?:high|medium|low)\b/ig,'').replace(/\b(?:high|medium|low)\s+priority\b/ig,'').replace(/\s+(?:on|for|to)$/i,'').replace(/\s+/g,' ').trim().replace(/^(?:to\s+|for\s+)/i,'').replace(/[.,;]+$/,'');
       if(!title||title.length>180)errors.push('Invalid task title: '+part);
       else{
         let area=/\b(?:bci|project reports|accountant)\b/i.test(title)?'BCI / Career':/\b(?:family|kids|wife)\b/i.test(title)?'Family / Personal':/\b(?:faith|scripture|prayer)\b/i.test(title)?'Faith / Growth':'Vector AI';
-        actions.push({kind:'add',title,date,priority,area});
+        actions.push({kind:'add',title,date,due,priority,area});
       }
     }else errors.push('Unrecognized instruction: '+part);
   }
@@ -59,8 +104,8 @@ window.interpretCommand=function(){
   let result=parse(raw),actions=result.actions,errors=result.errors;pending=null;
   let box=document.getElementById('commandPreview');box.classList.remove('hidden');
   if(errors.length||!actions.length){box.innerHTML='<strong>No changes made.</strong><p class="hint">'+errors.map(esc).join('; ')+'</p>';return;}
-  let when=d=>d===day()?'today':d===plusDays(day(),1)?'tomorrow':d;
-  let items=actions.map(a=>a.kind==='add'?'Add: '+a.title+' · '+when(a.date)+' · '+a.priority+' priority · '+a.area:a.kind==='complete'?'Complete: '+a.title:'Move to tomorrow: '+a.title);
+  let when=d=>{if(d===day())return 'today';if(d===plusDays(day(),1))return 'tomorrow';const [y,m,dd]=d.split('-').map(Number);const t=new Date(y,m-1,dd);return t.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:y===new Date().getFullYear()?undefined:'numeric'});};
+  let items=actions.map(a=>a.kind==='add'?'Add: '+a.title+' · '+when(a.date)+(a.due?' · due '+when(a.due):'')+' · '+a.priority+' priority · '+a.area:a.kind==='complete'?'Complete: '+a.title:'Move to '+when(a.date)+': '+a.title);
   box.innerHTML='<strong>Review '+actions.length+' proposed change(s)</strong><ol>'+items.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ol><div class="actions"><button class="btn sm" onclick="applyPreview()">Confirm all changes</button><button class="btn alt sm" onclick="cancelVoicePreview()">Cancel</button></div><p class="hint">No changes occur before confirmation.</p>';
   pending={raw,actions};
 };
@@ -73,7 +118,7 @@ window.applyPreview=function(){
   for(let a of batch.actions){
     if(a.kind==='complete'){let t=data.tasks.find(t=>t.id===a.id);t.status='done';t.completed=stamp();log('task_completed',t.id,t.title);}
     else if(a.kind==='move'){let t=data.tasks.find(t=>t.id===a.id);t.scheduled=a.date;t.rollovers=(t.rollovers||0)+1;log('task_moved',t.id,t.title+' → '+a.date);}
-    else{let t={id:uuid(),title:a.title,next:'',area:a.area,priority:a.priority,scheduled:a.date,due:'',notes:'Voice/text command: '+batch.raw,status:'open',created:stamp(),completed:null,rollovers:0};data.tasks.push(t);log('task_created',t.id,t.title);}
+    else{let t={id:uuid(),title:a.title,next:'',area:a.area,priority:a.priority,scheduled:a.date,due:a.due||'',notes:'Voice/text command: '+batch.raw,status:'open',created:stamp(),completed:null,rollovers:0};data.tasks.push(t);log('task_created',t.id,t.title);}
   }
   document.getElementById('command').value='';document.getElementById('commandPreview').classList.add('hidden');persist();toast(batch.actions.length+' changes saved.');
 };
