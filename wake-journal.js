@@ -18,6 +18,16 @@ function ui(msg){
  if(button()){button().textContent=armed?'Disable hands-free':'Enable hands-free';button().setAttribute('aria-pressed',String(armed));}
  if(status())status().textContent=msg||(armed?(commandMode?'Journal listening for your instructions…':'Waiting for “Vector, open Journal”…'):'Hands-free is off.');
 }
+// Android Chrome often re-sends the whole phrase so far as a new final result
+// ("add", "add milk", "add milk tomorrow"); replace instead of appending.
+function merge(prev,next){
+ const n=x=>x.toLowerCase().replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim();
+ const p=n(prev),q=n(next);
+ if(!p)return next;
+ if(q.startsWith(p))return next;
+ if(p.endsWith(q)||p.includes(q))return prev;
+ return clean(prev+' '+next);
+}
 function waitMsg(){return '🎙 Listening. Say “Vector, open Journal”.'+(lastHeard?' Last heard: “'+lastHeard+'”':'');}
 function cancelTimer(){if(silenceTimer)clearTimeout(silenceTimer);silenceTimer=null;}
 function stopRecognition(){if(recognizer){let r=recognizer;recognizer=null;try{r.abort();}catch(_){}}}
@@ -49,7 +59,7 @@ function onSpeech(text,isFinal){
   return;
  }
  // Receive only final command segments to avoid duplicate interim words.
- if(isFinal){let phrase=trigger.exec(t);if(phrase)t=clean(t.slice(phrase.index+phrase[0].length)); if(t){buffered=clean([buffered,t].filter(Boolean).join(' '));timer();}}
+ if(isFinal){let phrase=trigger.exec(t);if(phrase)t=clean(t.slice(phrase.index+phrase[0].length)); t=t.replace(/^[,.!?\s]+/,''); if(t){buffered=merge(buffered,t);timer();}}
  else{timer();ui('Listening to your instruction…');}
 }
 function listen(localGen){
@@ -120,6 +130,6 @@ panel.style.marginTop='12px';
 button().addEventListener('click',toggle);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){if(armed)disarm('App left foreground.');}else autoStart();});
 window.addEventListener('pagehide',()=>{if(armed)disarm();});
-ui('Voice activation v13 loaded.'+(autoPref()?' Starting hands-free…':' Hands-free is off.'));
+ui('Voice activation v14 loaded.'+(autoPref()?' Starting hands-free…':' Hands-free is off.'));
 setTimeout(autoStart,300);
 })();
