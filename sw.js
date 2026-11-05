@@ -1,5 +1,5 @@
-const CACHE='command-journal-v22-20261103';
-const ASSETS=['./','./index.html','./manifest.webmanifest','./icon.svg','./voice-upgrade.js?v=5','./voice-capture.js','./calendar.js?v=2','./finance.js?v=1','./ai.js?v=1','./vendor/anthropic-sdk-0.137.0.js','./wake-journal.js?v=22'];
+const CACHE='command-journal-v23-20261103';
+const ASSETS=['./','./index.html','./manifest.webmanifest','./icon.svg','./icons/vector-192.png','./icons/vector-512.png','./icons/vector-maskable-512.png','./voice-upgrade.js?v=5','./voice-capture.js','./calendar.js?v=2','./finance.js?v=1','./ai.js?v=1','./vendor/anthropic-sdk-0.137.0.js','./wake-journal.js?v=22'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)));self.skipWaiting()});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));self.clients.claim()});
 self.addEventListener('fetch',event=>{
