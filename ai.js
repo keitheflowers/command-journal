@@ -23,6 +23,8 @@ Rules:
 - Amounts are dollars as numbers (e.g. 45.5). Pick category and area only from the allowed lists.
 - Keep task titles short and in the user's words, without dates or priority words.
 - "reply" is read aloud: one or two short, plain sentences. If you proposed changes, reply can be empty. If the user asked a question (what's due, how much did I spend), answer it from the context in "reply" and propose no actions.
+- Fitness: use kind "fitness" with person (a name from PEOPLE; null means the first person, the phone's owner), fit_type, and the matching fields: workout -> activity + minutes and/or miles; weight -> value in lb; steps -> value; water -> value in glasses; sleep -> value in hours; meal -> note (what was eaten) + calories and/or protein grams if the user said them. Never estimate calories the user didn't give.
+- Meal planning: use kind "meal_plan" with date, meal_slot and note (the meal, short). When asked to plan meals, propose one action per slot asked for, family-friendly and varied, and consider each person's calorie/protein goals if set. Keep it general healthy eating, not medical advice.
 - Fields that don't apply to an action's kind must be null.`;
 
 const nul=t=>({anyOf:[{type:t},{type:'null'}]});
@@ -31,16 +33,20 @@ function schema(){
  return {type:'object',additionalProperties:false,required:['actions','reply'],properties:{
   reply:{type:'string'},
   actions:{type:'array',items:{type:'object',additionalProperties:false,
-   required:['kind','title','task_id','date','due','priority','area','money_type','amount','category','note','bill_id'],
+   required:['kind','title','task_id','date','due','priority','area','money_type','amount','category','note','bill_id','person','fit_type','activity','minutes','miles','value','calories','protein','meal_slot'],
    properties:{
-    kind:{type:'string',enum:['add_task','complete_task','move_task','txn','bill_paid']},
+    kind:{type:'string',enum:['add_task','complete_task','move_task','txn','bill_paid','fitness','meal_plan']},
     title:nul('string'),task_id:nul('string'),date:nul('string'),due:nul('string'),
     priority:{anyOf:[{type:'string',enum:['High','Medium','Low']},{type:'null'}]},
     area:{anyOf:[{type:'string',enum:AREAS},{type:'null'}]},
     money_type:{anyOf:[{type:'string',enum:['expense','income']},{type:'null'}]},
     amount:nul('number'),
     category:{anyOf:[{type:'string',enum:F?[...F.EXPENSE,...F.INCOME]:['Other']},{type:'null'}]},
-    note:nul('string'),bill_id:nul('string')}}}}};
+    note:nul('string'),bill_id:nul('string'),
+    person:nul('string'),fit_type:{anyOf:[{type:'string',enum:['workout','weight','steps','water','sleep','meal']},{type:'null'}]},
+    activity:{anyOf:[{type:'string',enum:['run','walk','bike','swim','strength','yoga','hike','sports','other']},{type:'null'}]},
+    minutes:nul('number'),miles:nul('number'),value:nul('number'),calories:nul('number'),protein:nul('number'),
+    meal_slot:{anyOf:[{type:'string',enum:['breakfast','lunch','dinner','snack']},{type:'null'}]}}}}}};
 }
 function context(){
  const today=day(),d=new Date();
@@ -51,6 +57,10 @@ function context(){
   ctx.MONEY_THIS_MONTH={income:$(s.income),spent:$(s.spent),by_category:Object.fromEntries(Object.entries(s.byCategory).map(([k,v])=>[k,$(v)])),budgets:Object.fromEntries(Object.entries(s.budgets).map(([k,v])=>[k,$(v)])),recent:s.recent.map(t=>({...t,amount:$(t.amount)}))};
   ctx.BILLS=s.bills.map(b=>({bill_id:b.id,name:b.name,amount:$(b.amount),due_day:b.dueDay,paid_this_month:b.paidThisMonth}));
   ctx.EXPENSE_CATEGORIES=window.Finance.EXPENSE;ctx.INCOME_CATEGORIES=window.Finance.INCOME;}
+ if(window.Fitness){
+  ctx.PEOPLE=window.Fitness.people().map(p=>{const s=window.Fitness.stats(p.id);return {name:p.name,goals:p.goals,active_min_last_7_days:s.minutes7,workout_streak_days:s.streak,steps_today:s.stepsToday,water_today:s.waterToday,last_sleep_h:s.sleepLast,latest_weight_lb:s.latestW?+s.latestW.value:null,calories_today:s.calToday,protein_today:s.proteinToday};});
+  const mp=window.Fitness.mealPlan(),plan={};for(let i=-1;i<14;i++){const d=plusDays(today,i);if(mp[d])plan[d]=mp[d];}ctx.MEAL_PLAN_NEXT_2_WEEKS=plan;
+ }
  return ctx;
 }
 async function client(){
@@ -84,6 +94,16 @@ function toActions(out){
    const type=a.money_type==='income'?'income':'expense',cats=type==='income'?F.INCOME:F.EXPENSE;
    const note=String(a.note||'').slice(0,140);
    actions.push({kind:'txn',type,amount:cents,note,category:cats.includes(a.category)?a.category:F.guessCategory(note,type),date:isDate(a.date)?a.date:day()});
+  }else if(a.kind==='fitness'&&window.Fitness){
+   const P=window.Fitness.person(a.person)||(a.person?null:window.Fitness.person());if(!P){errors.push('No family member named “'+a.person+'” in Fitness.');continue;}
+   const k=a.fit_type,pos=v=>Number(v)>0?Number(v):null,base={kind:'fit',personId:P.id,who:P.name,date:isDate(a.date)?a.date:day(),fkind:k};
+   if(k==='workout'){const minutes=pos(a.minutes),miles=pos(a.miles);if(!minutes&&!miles){errors.push('A workout had no minutes or distance.');continue;}actions.push({...base,activity:window.Fitness.ACT[a.activity]?a.activity:'other',minutes:minutes&&Math.round(minutes),miles,note:a.note?String(a.note).slice(0,80):null});}
+   else if(k==='meal'){if(!a.note&&!pos(a.calories)){errors.push('A meal had no description.');continue;}actions.push({...base,note:String(a.note||'Meal').slice(0,80),calories:pos(a.calories)&&Math.round(a.calories),protein:pos(a.protein)&&Math.round(a.protein)});}
+   else if(['weight','steps','water','sleep'].includes(k)){const v=pos(a.value);if(!v){errors.push('A '+k+' entry had no number.');continue;}actions.push({...base,value:k==='steps'||k==='water'?Math.round(v):Math.round(v*10)/10});}
+   else errors.push('Unknown fitness entry.');
+  }else if(a.kind==='meal_plan'&&window.Fitness){
+   if(!isDate(a.date)||!window.Fitness.SLOTS.includes(a.meal_slot)||!a.note){errors.push('A meal plan entry was incomplete.');continue;}
+   actions.push({kind:'mealplan',date:a.date,slot:a.meal_slot,note:String(a.note).slice(0,120)});
   }else if(a.kind==='bill_paid'&&F){
    const b=F.summary(day().slice(0,7)).bills.find(x=>x.id===a.bill_id);if(!b){errors.push('Could not find that bill.');continue;}
    const cents=Math.round(Number(a.amount)*100);
@@ -122,7 +142,7 @@ const panel=document.createElement('div');panel.className='panel';
 function draw(msg){
  const on=store.get(K_ON)==='1',has=!!store.get(K_KEY);
  panel.innerHTML=`<h2>Vector AI (Claude)</h2>
- <p class="hint">When on, Family Save sends what you say, plus your open tasks, bills and this month's money summary, to Anthropic's Claude to understand free-form requests and answer questions like “what's due this week?” or “how much have I spent on dining?”. You still confirm every change. Built-in rules take over when it's off or you're offline.</p>
+ <p class="hint">When on, Family Save sends what you say, plus your open tasks, bills, this month's money summary and family fitness summary, to Anthropic's Claude to understand free-form requests and answer questions like “what's due this week?” or “how much have I spent on dining?”. You still confirm every change. Built-in rules take over when it's off or you're offline.</p>
  <label>Anthropic API key</label><input id="aiKey" type="password" autocomplete="off" placeholder="${has?'Saved — paste a new key to replace':'sk-ant-…'}">
  <div class="actions" style="margin-top:10px"><button class="btn" data-ai="save">Save key</button><button class="btn alt" data-ai="toggle"${has?'':' disabled'}>${on?'Turn AI off':'Turn AI on'}</button><button class="btn alt" data-ai="test"${has?'':' disabled'}>Test</button>${has?'<button class="btn danger sm" data-ai="forget">Forget key</button>':''}</div>
  <p class="hint" id="aiStatus" role="status">${msg||(on&&has?'AI is on.':has?'AI is off.':'Get a key at console.anthropic.com → API keys. It stays in this browser only and is not included in backups.')}</p>

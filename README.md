@@ -6,6 +6,7 @@ A working mobile-friendly, offline-first personal task journal prototype. No ext
 
 ## Features
 - Dashboard: safe-to-spend, savings rate, month-end spending pace vs budget, cash flow, spending vs your 3-month average, upcoming bills, weekly task completions and stuck tasks
+- Fitness tab (whole family): workouts, weight trend, steps, water, sleep, meals vs calorie/protein targets, and a weekly meal plan (Vector AI can fill it in)
 - Money tab: income/expenses, bills, category budgets; Calendar with day/week task lists
 - Task register with area, priority, schedule, due date, next action, notes, complete/reopen
 - Today dashboard and overdue indicators

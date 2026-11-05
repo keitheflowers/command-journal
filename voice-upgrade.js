@@ -67,6 +67,36 @@ function takeAmount(text){
   return {cents:Math.round(n*100),text:(text.slice(0,m.index)+' '+text.slice(m.index+m[0].length)).replace(/\s+/g,' ').trim()};
 }
 const tidyNote=t=>t.replace(/^(?:on|for|at|from|to|in)\s+/i,'').replace(/\s+(?:on|for|at|from|to)$/i,'').replace(/^(?:the|my|a|an)\s+/i,'').replace(/[.,;]+$/,'').trim();
+// ---- Spoken fitness ("I ran 3 miles in 30 minutes", "Amanda walked 20 minutes", "I weigh 182")
+const WORDN={a:1,an:1,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12};
+const numw=v=>v==null?null:/\d/.test(v)?parseFloat(String(v).replace(/,/g,'')):WORDN[String(v).toLowerCase()]??null;
+const ACTS=[[/\b(ran|run|running|jog|jogged|jogging)\b/,'run'],[/\b(walk|walked|walking)\b/,'walk'],[/\b(bike|biked|biking|cycled|cycling|rode|spin)\b/,'bike'],[/\b(swam|swim|swimming)\b/,'swim'],[/\b(lift|lifted|lifting|weights|strength|gym|worked out|workout|work out)\b/,'strength'],[/\b(yoga|stretch|stretched)\b/,'yoga'],[/\b(hike|hiked|hiking)\b/,'hike'],[/\b(played|basketball|soccer|football|tennis|pickleball|golf)\b/,'sports']];
+function parseFitness(part){
+  if(!window.Fitness)return null;
+  let text=part,who=null;
+  // leading family member name, or "for Amanda" anywhere
+  for(const p of window.Fitness.people()){const n=p.name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    let m=text.match(new RegExp('^'+n+"(?:'s)?\\s+",'i'));if(m){who=p;text=text.slice(m[0].length);break;}
+    m=text.match(new RegExp('\\s+for\\s+'+n+'\\b','i'));if(m){who=p;text=text.replace(m[0],' ');break;}}
+  text=text.replace(/^(?:i|we)\s+(?:just\s+)?/i,'').replace(/^(?:log|add|record)\s+(?:a\s+)?/i,'').trim();
+  const P=who||window.Fitness.person();
+  let date=day(),w=parseWhen(text);if(w&&!w.due){date=w.date;text=w.text;}
+  const t=text.toLowerCase(),base={kind:'fit',personId:P.id,who:P.name,date};
+  let m;
+  if((m=t.match(/^(?:weigh|weighed|weigh in at|weighed in at|weight(?: is| was)?)\s+(\d{2,3}(?:\.\d)?)/)))return {...base,fkind:'weight',value:+m[1]};
+  if((m=t.match(/(\d[\d,]*)\s+steps\b/)))return {...base,fkind:'steps',value:numw(m[1])};
+  if((m=t.match(/^(?:drank|had|drink)\s+(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:glass(?:es)?|cups?|bottles?)\s+of\s+water/)))return {...base,fkind:'water',value:numw(m[1])};
+  if((m=t.match(/^(?:slept|got)\s+(\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s*(?:and a half\s*)?(?:hours?|hrs?)(?:\s+of\s+sleep)?/)))return {...base,fkind:'sleep',value:numw(m[1])+(/and a half/.test(t)?0.5:0)};
+  if((m=t.match(/^(?:ate|had|eaten|eat)\s+(.+?)[,\s]+(\d{2,4})\s*(?:calories|cals?|kcal)\b/))){const pr=t.match(/(\d{1,3})\s*(?:g|grams?)\s+(?:of\s+)?protein/);return {...base,fkind:'meal',note:m[1].replace(/\s+(?:for|at)\s+(?:breakfast|lunch|dinner)$/,'').replace(/^(?:a|an|some|my)\s+/,'').trim(),calories:+m[2],protein:pr?+pr[1]:null};}
+  const act=ACTS.find(([re])=>re.test(t));
+  const mins=t.match(/(\d+(?:\.\d+)?|an?|one|two|half an?)\s*(hours?|hrs?|minutes?|mins?)\b/),miles=t.match(/(\d+(?:\.\d+)?)\s*(miles?|mi|km|kilometers?|k)\b/);
+  if(act&&(mins||miles||/^(?:spent|did|went)/.test(t)||ACTS.some(([re])=>re.test(t.split(' ')[0])))&&(mins||miles)){
+    let minutes=null;if(mins){const v=/half/.test(mins[1])?0.5:numw(mins[1]);minutes=Math.round(/^h/.test(mins[2])?v*60:v);}
+    let mi=null;if(miles){mi=+miles[1];if(/^k/.test(miles[2]))mi=Math.round(mi*0.621*10)/10;}
+    return {...base,fkind:'workout',activity:act[1],minutes,miles:mi};
+  }
+  return null;
+}
 function parseMoney(part){
   if(!window.Finance)return null;
   let m=part.match(/^(?:add|log|record)\s+(?:an?\s+)?(expense|income)\s+(?:of\s+)?(.+)$/i),type,rest,verb='';
@@ -93,13 +123,16 @@ function parse(raw){
   line=line.replace(/^(?:attest|a test|at task|add test|a task|atask)\s+/i,'add task ');
   line=line.replace(/([;,]\s*)(?:attest|a test|at task|add test|a task|atask)\s+/gi,'$1add task ');
   line=line.replace(/\b(?:and|then|also)\s+(?:attest|a test|at task|add test|a task|atask)\s+/gi,' and add task ');
-  line=line.replace(/\b(?:and|then|also)\s+(?=(?:add|create|make|schedule|complete|completed|finish|finished|mark|move|reschedule|push|spent|paid|bought|earned|received|got paid|deposited)\b)/gi,'; ');
-  line=line.replace(/[,;]\s*(?=(?:add|create|make|schedule|complete|completed|finish|finished|mark|move|reschedule|push|spent|paid|bought|earned|received|got paid|deposited)\b)/gi,'; ');
+  line=line.replace(/\b(?:and|then|also)\s+(?=(?:add|create|make|schedule|complete|completed|finish|finished|mark|move|reschedule|push|spent|paid|bought|earned|received|got paid|deposited|ran|walked|jogged|biked|swam|lifted|worked out|slept|drank|weigh|weighed|ate)\b)/gi,'; ');
+  line=line.replace(/[,;]\s*(?=(?:add|create|make|schedule|complete|completed|finish|finished|mark|move|reschedule|push|spent|paid|bought|earned|received|got paid|deposited|ran|walked|jogged|biked|swam|lifted|worked out|slept|drank|weigh|weighed|ate)\b)/gi,'; ');
   line=line.replace(/\s+(?=(?:add|create|make|schedule|complete|completed|finish|finished|mark|move|reschedule|push)\s+(?:a\s+)?(?:task\b|my\b|the\b))/gi,'; ');
   let parts=line.split(/\s*;\s*/).map(x=>x.trim()).filter(Boolean),actions=[],errors=[];
   if(parts.length>12)return {actions,errors:['Maximum 12 instructions per update']};
   for(let part of parts){
     part=part.replace(/^(?:i\s+)?(?:have\s+)?(?:just\s+)?(?:please\s+)?/i,'').trim();
+    const taskish=/^(?:add|create|make|schedule|remind|move|reschedule|push|complete|completed|finish|finished|mark|update)\b/i.test(part)&&!/^(?:add|log|record)\s+(?:a\s+)?(?:workout|run|walk|weigh|meal)/i.test(part);
+    let fitA=!taskish&&/\b(minutes?|mins?|hours?|miles?|km|steps|calories|water|slept|weigh|weighed|\d+(?:\.\d+)?\s*k)\b/i.test(part)?parseFitness(part):null;
+    if(fitA){actions.push(fitA);continue;}
     let money=parseMoney(part);
     if(money){if(money.error)errors.push(money.error);else actions.push(money);continue;}
     let done=part.match(/^(?:complete|completed|finish|finished|mark(?:\s+(?:as|it))?\s+(?:complete|done))\s+(?:the\s+|my\s+)?(?:task\s+)?(.+)$/i);
@@ -150,7 +183,8 @@ window.interpretCommand=async function(){
   if(errors.length&&!usedAI){box.innerHTML='<strong>No changes made.</strong><p class="hint">'+errors.map(esc).join('; ')+'</p>';return;}
   let when=d=>{if(d===day())return 'today';if(d===plusDays(day(),1))return 'tomorrow';const [y,m,dd]=d.split('-').map(Number);const t=new Date(y,m-1,dd);return t.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:y===new Date().getFullYear()?undefined:'numeric'});};
   let $=c=>window.Finance?window.Finance.money(c):'$'+(c/100).toFixed(2);
-  let items=actions.map(a=>a.kind==='txn'?(a.type==='income'?'Income: ':'Expense: ')+$(a.amount)+' · '+a.category+(a.note?' · '+a.note:'')+' · '+when(a.date):a.kind==='billpaid'?'Bill paid: '+a.title+' · '+$(a.amount)+' · '+when(a.date):a.kind==='add'?'Add: '+a.title+' · '+when(a.date)+(a.due?' · due '+when(a.due):'')+' · '+a.priority+' priority · '+a.area:a.kind==='complete'?'Complete: '+a.title:'Move to '+when(a.date)+': '+a.title);
+  let FIT=a=>window.Fitness?window.Fitness.describe({kind:a.fkind,activity:a.activity,minutes:a.minutes,miles:a.miles,value:a.value,note:a.note,calories:a.calories,protein:a.protein}):a.fkind;
+  let items=actions.map(a=>a.kind==='fit'?'Log for '+a.who+': '+FIT(a)+' · '+when(a.date):a.kind==='mealplan'?'Meal plan: '+a.slot+' '+when(a.date)+' · '+a.note:a.kind==='txn'?(a.type==='income'?'Income: ':'Expense: ')+$(a.amount)+' · '+a.category+(a.note?' · '+a.note:'')+' · '+when(a.date):a.kind==='billpaid'?'Bill paid: '+a.title+' · '+$(a.amount)+' · '+when(a.date):a.kind==='add'?'Add: '+a.title+' · '+when(a.date)+(a.due?' · due '+when(a.due):'')+' · '+a.priority+' priority · '+a.area:a.kind==='complete'?'Complete: '+a.title:'Move to '+when(a.date)+': '+a.title);
   box.innerHTML=(reply?'<p class="hint" style="margin:0 0 8px;color:#cdeefa">🧠 '+esc(reply)+'</p>':'')+(errors.length?'<p class="hint" style="margin:0 0 8px">Skipped: '+errors.map(esc).join('; ')+'</p>':'')+'<strong>Review '+actions.length+' proposed change(s)</strong><ol>'+items.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ol><div class="actions"><button class="btn sm" onclick="applyPreview()">Confirm all changes</button><button class="btn alt sm" onclick="cancelVoicePreview()">Cancel</button></div><p class="hint">No changes occur before confirmation.</p>';
   pending={raw,actions};
 };
@@ -161,7 +195,9 @@ window.applyPreview=function(){
   if(document.getElementById('command').value.trim()!==batch.raw)return toast('Text changed; interpret again.');
   for(let a of batch.actions){if((a.kind==='complete'||a.kind==='move')&&!data.tasks.some(t=>t.id===a.id&&t.status!=='done'))return toast('Task changed; interpret again.');}
   for(let a of batch.actions){
-    if(a.kind==='txn'){window.Finance.addTxn({type:a.type,amount:a.amount,category:a.category,note:a.note,date:a.date});}
+    if(a.kind==='fit'){window.Fitness.add({personId:a.personId,date:a.date,kind:a.fkind,activity:a.activity,minutes:a.minutes,miles:a.miles,value:a.value,note:a.note,calories:a.calories,protein:a.protein});}
+    else if(a.kind==='mealplan'){window.Fitness.setMeal(a.date,a.slot,a.note);}
+    else if(a.kind==='txn'){window.Finance.addTxn({type:a.type,amount:a.amount,category:a.category,note:a.note,date:a.date});}
     else if(a.kind==='billpaid'){window.Finance.markBillPaid(a.id,a.date,a.amount);}
     else if(a.kind==='complete'){let t=data.tasks.find(t=>t.id===a.id);t.status='done';t.completed=stamp();log('task_completed',t.id,t.title);}
     else if(a.kind==='move'){let t=data.tasks.find(t=>t.id===a.id);t.scheduled=a.date;t.rollovers=(t.rollovers||0)+1;log('task_moved',t.id,t.title+' → '+a.date);}

@@ -86,6 +86,7 @@ function insights(M){
  const next=M.soon.filter(b=>b.diff>=0&&b.diff<=7);if(next.length)out.push(['info',`${next.length} bill${next.length>1?'s':''} due this week, totaling ${$(next.reduce((a,b)=>a+b.amount,0))}.`]);
  if(M.rate!==null&&M.rateAvg!==null&&Math.abs(M.rate-M.rateAvg)>=0.05)out.push([M.rate>M.rateAvg?'good':'warn',`Saving ${Math.round(M.rate*100)}% of income this month vs ${Math.round(M.rateAvg*100)}% on average.`]);
  if(M.stuck.length)out.push(['warn',`${M.stuck.length} task${M.stuck.length>1?'s have':' has'} been pushed back repeatedly. Worth deciding or dropping.`]);
+ if(window.Fitness){const idle=window.Fitness.people().filter(p=>{const st=window.Fitness.stats(p.id);return p.goals.activeMin&&st.minutes7<p.goals.activeMin*0.5&&data.fitness?.logs?.some(l=>l.personId===p.id);});if(idle.length)out.push(['warn',`${idle.map(p=>p.name).join(' and ')} ${idle.length>1?'are':'is'} under half of the weekly activity goal.`]);}
  if(!out.length&&(M.hasMoney||M.hasTasks))out.push(['good','Nothing needs attention right now.']);
  return out.slice(0,5);
 }
@@ -177,6 +178,13 @@ const css=document.createElement('style');css.textContent=`
 document.head.appendChild(css);
 const showTable={};
 function card(id,title,cap,body,tableHtml){return `<div class="panel dz-card" id="dz-${id}">${tableHtml?`<button class="btn alt sm dz-tbtn" data-dzt="${id}">${showTable[id]?'Chart':'Table'}</button>`:''}<h2>${title}</h2>${cap?`<p class="dz-cap">${cap}</p>`:''}${showTable[id]&&tableHtml?tableHtml:body}</div>`;}
+function fitnessCard(){
+ if(!window.Fitness)return '';const people=window.Fitness.people();const rows=people.map(p=>({p,s:window.Fitness.stats(p.id)}));
+ if(!rows.some(r=>r.s.minutes7||r.s.latestW||r.s.stepsToday))return `<div class="panel"><h2>Family fitness</h2><div class="dz-empty">Log workouts or weigh-ins in Fitness to see everyone’s week here.</div></div>`;
+ const max=Math.max(1,...rows.map(r=>Math.max(r.s.minutes7,r.p.goals.activeMin||0)));
+ return `<div class="panel"><h2>Family fitness</h2><p class="dz-cap">Active minutes, last 7 days · tick = goal</p>${rows.map(({p,s})=>{const g=p.goals.activeMin,hit=g&&s.minutes7>=g;const wd=s.latestW&&s.w30&&s.latestW!==s.w30?(+s.latestW.value-+s.w30.value):null;
+  return `<div class="dz-cat"><div class="top"><span>${esc(p.name)}</span><span>${s.minutes7} min${g?` / ${g}`:''}</span></div><div class="dz-track"><i style="width:${s.minutes7/max*100}%"></i>${g?`<u style="left:${g/max*100}%"></u>`:''}</div><div class="meta">${hit?'<span class="dz-good">✅ goal met</span> · ':''}${s.streak?`🔥 ${s.streak}-day streak`:`${s.workouts7} workout${s.workouts7===1?'':'s'}`}${s.latestW?` · ${s.latestW.value} lb${wd!=null?` (${wd>0?'+':''}${wd.toFixed(1)} in 30d)`:''}`:''}${s.sleepAvg!=null?` · sleep ${s.sleepAvg.toFixed(1)} h avg`:''}</div></div>`;}).join('')}</div>`;
+}
 const icon={good:'✅',warn:'⚠️',bad:'⛔',info:'📅'};
 function render(){
  const M=metrics(),W=Math.max(280,(section.clientWidth||360)-36);
@@ -204,6 +212,7 @@ function render(){
  ${card('cats','Where the money goes',`${monthName(M.cur,{month:'long'})} so far, compared with your normal`,catsHtml,M.catRows.length&&table(['Category','This month','3-mo avg','Budget'],M.catRows.map(x=>[esc(x.c),$(x.now),x.avg?$(x.avg):'—',x.budget?$(x.budget):'—'])))}
  <div class="panel"><h2>Bills coming up</h2>${M.soon.length?M.soon.map(b=>`<div class="dz-row"><div>${esc(b.name)}<div class="s">${pd(b.due).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})} · ${b.diff<0?`<span class="dz-bad">⛔ ${-b.diff}d late</span>`:b.diff===0?'<span class="dz-warn">⚠️ due today</span>':`in ${b.diff}d`}</div></div><div>${$(b.amount,{cents:true})}</div></div>`).join(''):'<div class="dz-empty">No unpaid bills in the next 14 days.</div>'}</div>
  ${card('weeks','Getting things done',`Tasks completed per week${M.doneRate!==null?` · ${Math.round(M.doneRate*100)}% of tasks scheduled in the last 30 days are done`:''}`,M.hasTasks?wk.svg:'<div class="dz-empty">No tasks yet.</div>',M.hasTasks&&wk.table)}
+ ${fitnessCard()}
  <div class="panel"><h2>Stuck tasks</h2><p class="dz-cap">Pushed back 2+ times, or scheduled over a week ago and still open</p>${M.stuck.length?M.stuck.slice(0,6).map(t=>`<div class="dz-row"><div>${esc(t.title)}<div class="s">${esc(t.area)} · scheduled ${pd(t.scheduled).toLocaleDateString(undefined,{month:'short',day:'numeric'})}${t.rollovers?` · ↪ ${t.rollovers}×`:''}</div></div><button class="btn alt sm" onclick="openTaskForm('${esc(t.id)}')">Edit</button></div>`).join(''):'<div class="dz-empty">Nothing stuck. 👍</div>'}</div>`;
  // interactions
  const pc=section.querySelector('#dz-pace');if(pc&&!showTable.pace&&M.hasMoney){wire(pc,null,pace.fmt);const cross=pc.querySelector('.dz-cross');pc.querySelectorAll('.dz-col').forEach(el=>el.addEventListener('pointerenter',()=>{const X=pace.x(+el.dataset.i);cross.setAttribute('x1',X);cross.setAttribute('x2',X);cross.setAttribute('stroke-opacity','.6');}));pc.querySelector('svg').addEventListener('pointerleave',()=>cross.setAttribute('stroke-opacity','0'));}
