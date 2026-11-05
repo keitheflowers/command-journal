@@ -7,6 +7,7 @@ A working mobile-friendly, offline-first personal task journal prototype. No ext
 ## Features
 - Dashboard: safe-to-spend, savings rate, month-end spending pace vs budget, cash flow, spending vs your 3-month average, upcoming bills, weekly task completions and stuck tasks
 - Fitness tab (whole family): workouts, weight trend, steps, water, sleep, meals vs calorie/protein targets, and a weekly meal plan (Vector AI can fill it in)
+- Strength tab: workout plans typed or spoken naturally ("flat bench 225 for 15, 315 for 10"), log actual sets by voice or on screen, plan-vs-actual, estimated 1RM progress / holding / decline vs last session, PRs, next-session targets, weekly volume and muscle balance
 - Savings goals (Money tab): target, deadline, add/withdraw, on-track pacing and $/month needed; set-aside money reduces Safe to spend
 - Grocery list (Fitness tab): grouped by store section, check off while shopping, build from the meal plan (full ingredient lists with Vector AI)
 - Money tab: income/expenses, bills, category budgets; Calendar with day/week task lists

@@ -107,6 +107,38 @@ function monthEnd(text){
   if(!m[2]&&day(d)<day())d.setFullYear(d.getFullYear()+1);
   return {date:day(d),text:(text.slice(0,m.index)+' '+text.slice(m.index+m[0].length)).replace(/\s+/g,' ').trim()};
 }
+// ---- Strength: "plan chest day: flat bench 225 for 15, 315 for 10" / "I did chest day: bench 225 for 10, 315 for 8"
+const WD=[['sun'],['mon'],['tue','tues'],['wed'],['thu','thur','thurs'],['fri'],['sat']];
+function takeDays(text){
+  const days=new Set();const re=/\b(?:on\s+|every\s+)?(sun|mon|tues?|wed(?:nes)?|thu(?:rs?)?|fri|sat(?:ur)?)(?:days?)?\b(?:\s*(?:,|and|&)\s*)?/gi;
+  const out=text.replace(re,(m,d)=>{const i=WD.findIndex(a=>a.some(x=>d.toLowerCase().startsWith(x)));if(i>=0)days.add(i);return ' ';});
+  return {days:[...days].sort(),text:out.replace(/\s+/g,' ').trim()};
+}
+function strengthPerson(text){
+  let who=null;if(window.Fitness)for(const p of window.Fitness.people()){const n=p.name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g,'\\$&');const m=text.match(new RegExp('^'+n+"(?:'s)?\\s+",'i'));if(m){who=p;text=text.slice(m[0].length);break;}}
+  return {who:who||(window.Fitness&&window.Fitness.person()),text:text.replace(/^(?:i|we)\s+(?:just\s+)?/i,'')};
+}
+function parseStrength(part){
+  if(!window.Strength||!window.Fitness||!/\d|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|twelve|fifteen|twenty)\b/i.test(part))return null;
+  let {who,text}=strengthPerson(part);let m;
+  if((m=text.match(/^(?:plan|create|make|build|set up|setup|new|design)\s+(?:a\s+|my\s+)?(?:new\s+)?(?:workout\s+)?(?:plan\s+)?(?:for\s+|called\s+|named\s+)?(.+?\b(?:day|workout|routine|session))\b[\s,:-]*(?:with|as|is|:)?\s*(.+)$/i))){
+    const d=takeDays(m[2]),exs=window.Strength.parseSets(d.text).filter(e=>e.name);
+    if(!exs.length)return {error:'Say the exercises with weight and reps, e.g. “plan chest day: flat bench 225 for 15, 315 for 10”.'};
+    return {kind:'liftplan',personId:who.id,who:who.name,title:m[1].replace(/^(?:my|the)\s+/i,''),days:d.days,exercises:exs};
+  }
+  if((m=text.match(/^(?:did|finished|completed|crushed|hit|knocked out|done with|logged|log)\s+(.+)$/i))){
+    let rest=m[1],date=day();const w=parseWhen(rest);if(w&&!w.due){date=w.date;rest=w.text;}
+    let plan=null,pm=rest.match(/^(?:my\s+|the\s+|a\s+)?(.+?\b(?:day|workout|routine|session))\b[\s,:-]*(?:and\s+|with\s+)?(.*)$/i);
+    if(pm){plan=window.Strength.findPlan(who.id,pm[1]);if(plan||!pm[2])rest=pm[2]||'';}
+    const mins=rest.match(/\b(?:in|took|for)\s+(\d{2,3})\s*(?:min|minutes)\b/i);if(mins)rest=rest.replace(mins[0],' ');
+    const exs=window.Strength.parseSets(rest);if(!exs.length)return null;
+    if(!plan)plan=window.Strength.matchPlan(who.id,exs.filter(e=>e.name));
+    const sess=window.Strength.buildSession({personId:who.id,plan,actual:exs,date,minutes:mins?+mins[1]:null,name:pm&&!plan?pm[1].replace(/\b\w/g,c=>c.toUpperCase()):'Workout'});
+    if(!sess.exercises.some(e=>e.actual.length&&e.name))return {error:'Say which exercise, e.g. “I did bench 225 for 10, 315 for 8”.'};
+    return {kind:'liftsession',personId:who.id,who:who.name,session:sess};
+  }
+  return null;
+}
 function parseSavings(part){
   if(!window.Savings)return null;let m;
   if((m=part.match(/^(?:create|add|start|make|set up|setup|open|new)\s+(?:a\s+)?(?:new\s+)?savings?\s+goal\s+(?:for\s+|called\s+|named\s+)?(.+)$/i))){
@@ -166,6 +198,7 @@ function parse(raw){
   for(let part of parts){
     part=part.replace(/^(?:i\s+)?(?:have\s+)?(?:just\s+)?(?:please\s+)?/i,'').trim();
     if(/^(?:add|put)\s.+\s(?:to|on)\s(?:the\s|my\s|our\s)?(?:grocery|groceries|shopping)(?:\slist)?$/i.test(part)||/^we/i.test(part)){const gr=parseGrocery(part);if(gr){actions.push(gr);continue;}}
+    {const st=parseStrength(part);if(st){if(st.error)errors.push(st.error);else actions.push(st);continue;}}
     {const sv=parseSavings(part);if(sv){if(sv.error)errors.push(sv.error);else actions.push(sv);continue;}}
     const taskish=/^(?:add|create|make|schedule|remind|move|reschedule|push|complete|completed|finish|finished|mark|update)\b/i.test(part)&&!/^(?:add|log|record)\s+(?:a\s+)?(?:workout|run|walk|weigh|meal)/i.test(part);
     let fitA=!taskish&&/\b(minutes?|mins?|hours?|miles?|km|steps|calories|water|slept|weigh|weighed|\d+(?:\.\d+)?\s*k)\b/i.test(part)?parseFitness(part):null;
@@ -221,7 +254,10 @@ window.interpretCommand=async function(){
   let when=d=>{if(d===day())return 'today';if(d===plusDays(day(),1))return 'tomorrow';const [y,m,dd]=d.split('-').map(Number);const t=new Date(y,m-1,dd);return t.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:y===new Date().getFullYear()?undefined:'numeric'});};
   let $=c=>window.Finance?window.Finance.money(c):'$'+(c/100).toFixed(2);
   let FIT=a=>window.Fitness?window.Fitness.describe({kind:a.fkind,activity:a.activity,minutes:a.minutes,miles:a.miles,value:a.value,note:a.note,calories:a.calories,protein:a.protein}):a.fkind;
-  let items=actions.map(a=>a.kind==='goalnew'?'New savings goal: '+a.title+' · '+$(a.amount)+(a.date?' · by '+when(a.date):''):a.kind==='goaladd'?(a.amount>0?'Savings: +'+$(a.amount)+' → ':'Savings: −'+$(-a.amount)+' from ')+a.title+' · '+when(a.date):a.kind==='grocery'?'Grocery list: '+a.items.map(i=>(i.qty?i.qty+' ':'')+i.name).join(', '):a.kind==='fit'?'Log for '+a.who+': '+FIT(a)+' · '+when(a.date):a.kind==='mealplan'?'Meal plan: '+a.slot+' '+when(a.date)+' · '+a.note:a.kind==='txn'?(a.type==='income'?'Income: ':'Expense: ')+$(a.amount)+' · '+a.category+(a.note?' · '+a.note:'')+' · '+when(a.date):a.kind==='billpaid'?'Bill paid: '+a.title+' · '+$(a.amount)+' · '+when(a.date):a.kind==='add'?'Add: '+a.title+' · '+when(a.date)+(a.due?' · due '+when(a.due):'')+' · '+a.priority+' priority · '+a.area:a.kind==='complete'?'Complete: '+a.title:'Move to '+when(a.date)+': '+a.title);
+  const SETS=s=>{const g=[];for(const x of s){const t=(x.w==null?'?':x.w===0?'BW':x.w)+'×'+x.r;const l=g.at(-1);if(l&&l.t===t)l.n++;else g.push({t,n:1});}return g.map(x=>x.n>1?x.t+' ×'+x.n:x.t).join(', ');};
+  const DN=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const LIFT=a=>{const R=window.Strength.analyze(a.session);return a.session.name+' for '+a.who+' · '+when(a.session.date)+' — '+R.map(r=>r.actual.length?r.name+' '+SETS(r.actual)+(r.planned.length?' (plan '+SETS(r.planned)+')':'')+' '+r.verdict.i+' '+r.verdict.t+(r.delta!=null?' '+(r.delta>=0?'+':'−')+Math.abs(Math.round(r.delta*100))+'%':'')+(r.pr?' 🏆 PR':''):r.name+' skipped').join('; ');};
+  let items=actions.map(a=>a.kind==='liftplan'?'Workout plan for '+a.who+': '+a.title+(a.days.length?' ('+a.days.map(d=>DN[d]).join(', ')+')':'')+' — '+a.exercises.map(e=>e.name+' '+SETS(e.sets)).join('; '):a.kind==='liftsession'?LIFT(a):a.kind==='goalnew'?'New savings goal: '+a.title+' · '+$(a.amount)+(a.date?' · by '+when(a.date):''):a.kind==='goaladd'?(a.amount>0?'Savings: +'+$(a.amount)+' → ':'Savings: −'+$(-a.amount)+' from ')+a.title+' · '+when(a.date):a.kind==='grocery'?'Grocery list: '+a.items.map(i=>(i.qty?i.qty+' ':'')+i.name).join(', '):a.kind==='fit'?'Log for '+a.who+': '+FIT(a)+' · '+when(a.date):a.kind==='mealplan'?'Meal plan: '+a.slot+' '+when(a.date)+' · '+a.note:a.kind==='txn'?(a.type==='income'?'Income: ':'Expense: ')+$(a.amount)+' · '+a.category+(a.note?' · '+a.note:'')+' · '+when(a.date):a.kind==='billpaid'?'Bill paid: '+a.title+' · '+$(a.amount)+' · '+when(a.date):a.kind==='add'?'Add: '+a.title+' · '+when(a.date)+(a.due?' · due '+when(a.due):'')+' · '+a.priority+' priority · '+a.area:a.kind==='complete'?'Complete: '+a.title:'Move to '+when(a.date)+': '+a.title);
   box.innerHTML=(reply?'<p class="hint" style="margin:0 0 8px;color:#cdeefa">🧠 '+esc(reply)+'</p>':'')+(errors.length?'<p class="hint" style="margin:0 0 8px">Skipped: '+errors.map(esc).join('; ')+'</p>':'')+'<strong>Review '+actions.length+' proposed change(s)</strong><ol>'+items.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ol><div class="actions"><button class="btn sm" onclick="applyPreview()">Confirm all changes</button><button class="btn alt sm" onclick="cancelVoicePreview()">Cancel</button></div><p class="hint">No changes occur before confirmation.</p>';
   pending={raw,actions};
 };
@@ -231,8 +267,11 @@ window.applyPreview=function(){
   let batch=pending;pending=null;
   if(document.getElementById('command').value.trim()!==batch.raw)return toast('Text changed; interpret again.');
   for(let a of batch.actions){if((a.kind==='complete'||a.kind==='move')&&!data.tasks.some(t=>t.id===a.id&&t.status!=='done'))return toast('Task changed; interpret again.');}
+  const summaries=[];
   for(let a of batch.actions){
-    if(a.kind==='goalnew'){window.Savings.create({name:a.title,target:a.amount,deadline:a.date});}
+    if(a.kind==='liftplan'){window.Strength.createPlan({personId:a.personId,name:a.title,days:a.days,exercises:a.exercises});}
+    else if(a.kind==='liftsession'){summaries.push(window.Strength.saveSession(a.session));}
+    else if(a.kind==='goalnew'){window.Savings.create({name:a.title,target:a.amount,deadline:a.date});}
     else if(a.kind==='goaladd'){window.Savings.contribute(a.id,a.amount,a.date);}
     else if(a.kind==='grocery'){window.Grocery.add(a.items,'voice');}
     else if(a.kind==='fit'){window.Fitness.add({personId:a.personId,date:a.date,kind:a.fkind,activity:a.activity,minutes:a.minutes,miles:a.miles,value:a.value,note:a.note,calories:a.calories,protein:a.protein});}
@@ -243,7 +282,7 @@ window.applyPreview=function(){
     else if(a.kind==='move'){let t=data.tasks.find(t=>t.id===a.id);t.scheduled=a.date;t.rollovers=(t.rollovers||0)+1;log('task_moved',t.id,t.title+' → '+a.date);}
     else{let t={id:uuid(),title:a.title,next:'',area:a.area,priority:a.priority,scheduled:a.date,due:a.due||'',notes:'Voice/text command: '+batch.raw,status:'open',created:stamp(),completed:null,rollovers:0};data.tasks.push(t);log('task_created',t.id,t.title);}
   }
-  document.getElementById('command').value='';document.getElementById('commandPreview').classList.add('hidden');persist();toast(batch.actions.length+(batch.actions.length===1?' change':' changes')+' saved.');
+  document.getElementById('command').value='';document.getElementById('commandPreview').classList.add('hidden');persist();window.lastSaveSummary=summaries.join(' ');toast(summaries.length?summaries[0]:batch.actions.length+(batch.actions.length===1?' change':' changes')+' saved.');
 };
 document.getElementById('command').addEventListener('input',()=>{pending=null;document.getElementById('commandPreview').classList.add('hidden');});
 })();

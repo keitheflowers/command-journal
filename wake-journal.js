@@ -97,7 +97,7 @@ function handleConfirm(t){
  const yes=YES.test(t),no=NO.test(t);
  if(yes===no)return false; // neither, or ambiguous: ignore
  confirmUntil=0;
- if(yes){window.applyPreview();nextInSession('Saved. What else?');}
+ if(yes){window.lastSaveSummary='';window.applyPreview();const sum=window.lastSaveSummary;nextInSession(sum?sum+' What else?':'Saved. What else?');}
  else{window.cancelVoicePreview();nextInSession('Cancelled. What else?');}
  return true;
 }
@@ -215,6 +215,6 @@ panel.style.marginTop='12px';
 button().addEventListener('click',toggle);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){if(armed)disarm('App left foreground.');}else autoStart();});
 window.addEventListener('pagehide',()=>{if(armed)disarm();});
-ui('Voice activation v26 loaded.'+(autoPref()?' Starting hands-free…':' Hands-free is off.'));
+ui('Voice activation v27 loaded.'+(autoPref()?' Starting hands-free…':' Hands-free is off.'));
 setTimeout(autoStart,300);
 })();
