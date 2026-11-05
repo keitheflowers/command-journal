@@ -1,4 +1,4 @@
-/* Command Journal home finances: transactions, monthly summary, bills, budgets.
+/* The Family Save home finances: transactions, monthly summary, bills, budgets.
    Stored with the journal in data.finance (amounts in cents), so it is
    included in JSON backups. Local to this device only. */
 (function(){
@@ -109,7 +109,7 @@ function renderFinance(){
   <div class="two"><div><label>Amount</label><input id="finAmt" inputmode="decimal" placeholder="0.00"></div><div><label>Category</label><select id="finCat">${cats4.map(c=>`<option>${c}</option>`).join('')}</select></div></div>
   <div class="two"><div><label>Date</label><input id="finDate" type="date" value="${month===monthOf(today)?today:month+'-01'}"></div><div><label>Note</label><input id="finNote" maxlength="140" placeholder="${entryType==='income'?'e.g. paycheck':'e.g. Kroger'}"></div></div>
   <button class="btn full" style="margin-top:12px" data-f="add">${entryType==='income'?'Add income':'Add expense'}</button>
-  <p class="hint">Hands-free: “Vector, open Journal, spent 45 on groceries”, “got paid 2,100”, or “paid the electric bill”.</p>
+  <p class="hint">Hands-free: “Vector, open Family Save, spent 45 on groceries”, “got paid 2,100”, or “paid the electric bill”.</p>
  </div>
  <div class="panel"><div class="header"><h2>Bills</h2><button class="btn sm" data-f="billform">${showBillForm?'Close':'+ Bill'}</button></div>
   ${showBillForm?`<div class="two"><div><label>Bill name</label><input id="billName" maxlength="60" placeholder="e.g. Electric"></div><div><label>Amount</label><input id="billAmt" inputmode="decimal" placeholder="0.00"></div></div><div class="two"><div><label>Due day of month</label><input id="billDay" type="number" min="1" max="31" placeholder="15"></div><div><label>Category</label><select id="billCat">${EXPENSE.map(c=>`<option${c==='Utilities'?' selected':''}>${c}</option>`).join('')}</select></div></div><button class="btn full" style="margin-top:12px" data-f="addbill">Save bill</button>`:''}

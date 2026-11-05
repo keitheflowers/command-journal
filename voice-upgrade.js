@@ -1,4 +1,4 @@
-/* Command Journal multi-action voice interpreter v2 */
+/* The Family Save multi-action voice interpreter v2 */
 (function(){
 'use strict';
 function norm(s){return String(s||'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\b(the|a|an|my|task|to|for|please|i|need|want|me|that|is|as)\b/g,' ').replace(/\s+/g,' ').trim();}

@@ -1,4 +1,4 @@
-/* Vector AI: optional Claude-powered understanding for Command Journal.
+/* Vector AI: optional Claude-powered understanding for The Family Save.
    Turns free-form speech/text into the same proposed changes the built-in
    rules produce (they still need "confirm"), and answers questions about
    your tasks and money. Uses the person's own Anthropic API key, kept in
@@ -11,7 +11,7 @@ const K_KEY='vectorAiKey',K_ON='vectorAiOn';
 const store={get:k=>{try{return localStorage.getItem(k)||'';}catch(_){return '';}},set:(k,v)=>{try{v?localStorage.setItem(k,v):localStorage.removeItem(k);}catch(_){}}};
 let sdk=null,history=[];
 
-const SYSTEM=`You are Vector, the assistant inside Command Journal, a personal task and home-finance app.
+const SYSTEM=`You are Vector, the assistant inside The Family Save, a family task and home-finance app.
 The user speaks or types requests. Turn each request into a list of proposed changes, and/or a short spoken reply.
 
 Rules:
@@ -122,7 +122,7 @@ const panel=document.createElement('div');panel.className='panel';
 function draw(msg){
  const on=store.get(K_ON)==='1',has=!!store.get(K_KEY);
  panel.innerHTML=`<h2>Vector AI (Claude)</h2>
- <p class="hint">When on, Journal sends what you say, plus your open tasks, bills and this month's money summary, to Anthropic's Claude to understand free-form requests and answer questions like “what's due this week?” or “how much have I spent on dining?”. You still confirm every change. Built-in rules take over when it's off or you're offline.</p>
+ <p class="hint">When on, Family Save sends what you say, plus your open tasks, bills and this month's money summary, to Anthropic's Claude to understand free-form requests and answer questions like “what's due this week?” or “how much have I spent on dining?”. You still confirm every change. Built-in rules take over when it's off or you're offline.</p>
  <label>Anthropic API key</label><input id="aiKey" type="password" autocomplete="off" placeholder="${has?'Saved — paste a new key to replace':'sk-ant-…'}">
  <div class="actions" style="margin-top:10px"><button class="btn" data-ai="save">Save key</button><button class="btn alt" data-ai="toggle"${has?'':' disabled'}>${on?'Turn AI off':'Turn AI on'}</button><button class="btn alt" data-ai="test"${has?'':' disabled'}>Test</button>${has?'<button class="btn danger sm" data-ai="forget">Forget key</button>':''}</div>
  <p class="hint" id="aiStatus" role="status">${msg||(on&&has?'AI is on.':has?'AI is off.':'Get a key at console.anthropic.com → API keys. It stays in this browser only and is not included in backups.')}</p>

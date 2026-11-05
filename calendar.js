@@ -1,4 +1,4 @@
-/* Command Journal calendar: month grid with week rows.
+/* The Family Save calendar: month grid with week rows.
    Tap a day to list that day's tasks; tap a week number to list the week. */
 (function(){
 'use strict';

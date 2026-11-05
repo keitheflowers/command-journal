@@ -1,4 +1,4 @@
-/* Command Journal speech capture v3: pause-tolerant, manual finish.
+/* The Family Save speech capture v3: pause-tolerant, manual finish.
  * Keeps completed segments, attempts to resume if Android ends a recognition session.
  * Browser speech recognition has platform-specific time limits and may require network access.
  */

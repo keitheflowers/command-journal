@@ -1,10 +1,10 @@
-/* Foreground wake phrase for Command Journal. Browser limitation:
+/* Foreground wake phrase for The Family Save. Browser limitation:
    user gesture required to arm; recognition may stop or require another gesture.
    Never runs in background, never modifies tasks without existing confirmation. */
 (function(){
 'use strict';
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-const trigger=/\b(?:vector|victor|vektor|vecter|hector)[\s,.!]+(?:open|opened|opening|opens)\s+(?:the\s+|my\s+)?(?:journal|journals|general)\b/i;
+const trigger=/\b(?:vector|victor|vektor|vecter|hector)[\s,.!]+(?:open|opened|opening|opens)\s+(?:the\s+|my\s+)?(?:journal|journals|general|family\s+(?:save|saves|saved|safe|safes))\b/i;
 let armed=false,active=false,recognizer=null,restart=null,retries=0,gen=0;
 let session=false,sessionTimer=null,lastSaid='',confirmUntil=0,quietUntil=0,lastHeard='',buffered='',recognized='',silenceTimer=null,commandMode=false,autoTry=false;
 const PREF='wakeAuto';
@@ -21,12 +21,12 @@ function updatePill(){
  if(!armed){pill.className='off';return;}
  if(Date.now()<confirmUntil&&hasPending()){pill.className='live';pill.textContent='🎙 Say “confirm” or “cancel”';return;}
  if(commandMode){pill.className='live';pill.textContent='🎙 Listening… say a task, or “that’s all”';return;}
- pill.className='';pill.textContent='🎙 Say “Vector, open Journal”';
+ pill.className='';pill.textContent='🎙 Say “Vector, open Family Save”';
 }
 function ui(msg){
  setTimeout(updatePill,0);
  if(button()){button().textContent=armed?'Disable hands-free':'Enable hands-free';button().setAttribute('aria-pressed',String(armed));}
- if(status())status().textContent=msg||(armed?(commandMode?'Journal listening for your instructions…':'Waiting for “Vector, open Journal”…'):'Hands-free is off.');
+ if(status())status().textContent=msg||(armed?(commandMode?'Family Save is listening for your instructions…':'Waiting for “Vector, open Family Save”…'):'Hands-free is off.');
 }
 // Android Chrome often re-sends the whole phrase so far as a new final result
 // ("add", "add milk", "add milk tomorrow"); replace instead of appending.
@@ -38,7 +38,7 @@ function merge(prev,next){
  if(p.endsWith(q)||p.includes(q))return prev;
  return clean(prev+' '+next);
 }
-function waitMsg(){return '🎙 Listening. Say “Vector, open Journal”.'+(lastHeard?' Last heard: “'+lastHeard+'”':'');}
+function waitMsg(){return '🎙 Listening. Say “Vector, open Family Save”.'+(lastHeard?' Last heard: “'+lastHeard+'”':'');}
 // ---- Hands-free confirmation -------------------------------------------
 const YES=/\b(?:confirm|confirmed|yes|yeah|yep|save|save it|do it|go ahead|approve|approved|sounds good)\b/i;
 const NO=/\b(?:cancel|cancelled|canceled|no|nope|never ?mind|discard|scrap that|delete that)\b/i;
@@ -118,12 +118,12 @@ function execute(){
    else nextInSession('Sorry, I didn’t catch that. Try again, or say that’s all.');
   });
  }else if(session)startCommandMode('');
- else ui('No instruction heard. Say “Vector, open Journal” to try again.');
+ else ui('No instruction heard. Say “Vector, open Family Save” to try again.');
 }
 function startCommandMode(initial){
  commandMode=true;session=true;buffered=clean(initial);recognized='';openView('today');
- clearTimeout(sessionTimer);sessionTimer=setTimeout(()=>{if(commandMode&&!buffered)endSession('Journal closed after a quiet spell. Say “Vector, open Journal” to start again.');},30000);
- ui('Journal listening. Give an instruction, pause to review, or say “that’s all”.');
+ clearTimeout(sessionTimer);sessionTimer=setTimeout(()=>{if(commandMode&&!buffered)endSession('Family Save closed after a quiet spell. Say “Vector, open Family Save” to start again.');},30000);
+ ui('Listening. Give an instruction, pause to review, or say “that’s all”.');
  if(buffered)timer();
 }
 function timer(ms){cancelTimer();silenceTimer=setTimeout(execute,ms||2000);}
@@ -164,7 +164,7 @@ function listen(localGen){
  r.onerror=e=>{
   if(localGen!==gen)return;
   if(e.error==='not-allowed'&&autoTry){autoTry=false;disarm('Chrome needs one tap first. Tap anywhere to start hands-free.');waitForTap();return;}
-  if(['not-allowed','service-not-allowed','audio-capture'].includes(e.error)){disarm('Activation failed ('+e.error+'). Open Journal in Chrome and allow microphone permission for this site.');return;}
+  if(['not-allowed','service-not-allowed','audio-capture'].includes(e.error)){disarm('Activation failed ('+e.error+'). Open Family Save in Chrome and allow microphone permission for this site.');return;}
   if(e.error==='network'){disarm('Activation failed (network). Browser speech service unavailable; try Chrome with internet access.');return;}
   if(e.error!=='no-speech'&&e.error!=='aborted')ui('Speech recognition error: '+e.error+'. Retrying…');
  };
@@ -176,16 +176,16 @@ function listen(localGen){
   if(document.hidden)return;
   // Only count rapid failures; normal silence timeouts restart indefinitely.
   if(Date.now()-startedAt>1500)retries=0;
-  if(++retries>12){disarm('Android repeatedly stopped speech recognition. Try opening Journal in Chrome; browser wake detection may be unsupported.');return;}
+  if(++retries>12){disarm('Android repeatedly stopped speech recognition. Try opening Family Save in Chrome; browser wake detection may be unsupported.');return;}
   restart=setTimeout(()=>{try{listen(localGen)}catch(_){disarm('Browser requires another tap to restart listening.');}},150);
  };
  r.onstart=()=>{if(localGen===gen&&armed&&!commandMode)ui(waitMsg());};
- try{r.start();if(!retries)ui('Starting microphone…');}catch(e){disarm('Activation failed ('+(e.name||'start blocked')+'). Open Journal in Chrome and allow the microphone.');}
+ try{r.start();if(!retries)ui('Starting microphone…');}catch(e){disarm('Activation failed ('+(e.name||'start blocked')+'). Open Family Save in Chrome and allow the microphone.');}
 }
 function arm(auto){
  if(armed)return;
- if(!SR){ui('Activation unavailable: this browser lacks SpeechRecognition. Open Journal in Chrome.');return;}
- if(!window.isSecureContext){ui('Activation unavailable: open Journal using its secure HTTPS address.');return;}
+ if(!SR){ui('Activation unavailable: this browser lacks SpeechRecognition. Open Family Save in Chrome.');return;}
+ if(!window.isSecureContext){ui('Activation unavailable: open Family Save using its secure HTTPS address.');return;}
  autoTry=!!auto;armed=true;commandMode=false;buffered='';retries=0;gen++;
  try{listen(gen);}catch(_){disarm('Unable to start microphone.');if(auto)waitForTap();}
 }
@@ -206,7 +206,7 @@ function waitForTap(){
 function autoStart(){if(autoPref()&&!armed&&!document.hidden)arm(true);}
 const panel=document.createElement('div');
 panel.className='panel';
-panel.innerHTML='<h2>Vector voice activation</h2><p class="hint">Say <strong>“Vector, open Journal”</strong>, then your instruction. Journal reads back the change — say <strong>“confirm”</strong> or <strong>“cancel”</strong>. It keeps listening for more until you say <strong>“that’s all”</strong>. Works only while this page is open and active; Android may stop browser listening.</p><button id="wakeArm" class="btn alt" type="button">Enable hands-free</button><p id="wakeStatus" class="hint" role="status">Hands-free is off.</p>';
+panel.innerHTML='<h2>Vector voice activation</h2><p class="hint">Say <strong>“Vector, open Family Save”</strong>, then your instruction. It reads back the change — say <strong>“confirm”</strong> or <strong>“cancel”</strong>. It keeps listening for more until you say <strong>“that’s all”</strong>. Works only while this page is open and active; Android may stop browser listening.</p><button id="wakeArm" class="btn alt" type="button">Enable hands-free</button><p id="wakeStatus" class="hint" role="status">Hands-free is off.</p>';
 const settings=document.getElementById('settings');
 const voiceSection=Array.from(settings.querySelectorAll('.panel')).find(p=>p.querySelector('h2')?.textContent==='Voice and notifications');
 if(voiceSection)voiceSection.insertAdjacentElement('afterbegin',panel);
@@ -215,6 +215,6 @@ panel.style.marginTop='12px';
 button().addEventListener('click',toggle);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){if(armed)disarm('App left foreground.');}else autoStart();});
 window.addEventListener('pagehide',()=>{if(armed)disarm();});
-ui('Voice activation v22 loaded.'+(autoPref()?' Starting hands-free…':' Hands-free is off.'));
+ui('Voice activation v24 loaded.'+(autoPref()?' Starting hands-free…':' Hands-free is off.'));
 setTimeout(autoStart,300);
 })();

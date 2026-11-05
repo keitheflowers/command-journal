@@ -1,8 +1,12 @@
-# Command Journal v1 — phone-first MVP
+# The Family Save — phone-first family command center
+
+(Formerly Command Journal.) Tasks, calendar, home finances, a dashboard, and hands-free voice with the Vector assistant.
 
 A working mobile-friendly, offline-first personal task journal prototype. No external runtime dependencies.
 
 ## Features
+- Dashboard: safe-to-spend, savings rate, month-end spending pace vs budget, cash flow, spending vs your 3-month average, upcoming bills, weekly task completions and stuck tasks
+- Money tab: income/expenses, bills, category budgets; Calendar with day/week task lists
 - Task register with area, priority, schedule, due date, next action, notes, complete/reopen
 - Today dashboard and overdue indicators
 - Morning notes and evening review with automatic carryover of open scheduled tasks
