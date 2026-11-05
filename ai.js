@@ -25,6 +25,8 @@ Rules:
 - "reply" is read aloud: one or two short, plain sentences. If you proposed changes, reply can be empty. If the user asked a question (what's due, how much did I spend), answer it from the context in "reply" and propose no actions.
 - Fitness: use kind "fitness" with person (a name from PEOPLE; null means the first person, the phone's owner), fit_type, and the matching fields: workout -> activity + minutes and/or miles; weight -> value in lb; steps -> value; water -> value in glasses; sleep -> value in hours; meal -> note (what was eaten) + calories and/or protein grams if the user said them. Never estimate calories the user didn't give.
 - Meal planning: use kind "meal_plan" with date, meal_slot and note (the meal, short). When asked to plan meals, propose one action per slot asked for, family-friendly and varied, and consider each person's calorie/protein goals if set. Keep it general healthy eating, not medical advice.
+- Savings goals: "goal_create" with title (goal name), amount (target dollars) and date (deadline or null). "goal_contribution" with goal_id from SAVINGS_GOALS, amount in dollars (positive to add money, negative to withdraw) and date. Never withdraw more than a goal has saved.
+- Grocery list: "grocery_add", one action per item, with title (item name, short), note (quantity like "2 lb" or null) and aisle. When building a list from meals, combine duplicates and skip pantry basics unless asked.
 - Fields that don't apply to an action's kind must be null.`;
 
 const nul=t=>({anyOf:[{type:t},{type:'null'}]});
@@ -33,9 +35,9 @@ function schema(){
  return {type:'object',additionalProperties:false,required:['actions','reply'],properties:{
   reply:{type:'string'},
   actions:{type:'array',items:{type:'object',additionalProperties:false,
-   required:['kind','title','task_id','date','due','priority','area','money_type','amount','category','note','bill_id','person','fit_type','activity','minutes','miles','value','calories','protein','meal_slot'],
+   required:['kind','title','task_id','date','due','priority','area','money_type','amount','category','note','bill_id','person','fit_type','activity','minutes','miles','value','calories','protein','meal_slot','goal_id','aisle'],
    properties:{
-    kind:{type:'string',enum:['add_task','complete_task','move_task','txn','bill_paid','fitness','meal_plan']},
+    kind:{type:'string',enum:['add_task','complete_task','move_task','txn','bill_paid','fitness','meal_plan','goal_create','goal_contribution','grocery_add']},
     title:nul('string'),task_id:nul('string'),date:nul('string'),due:nul('string'),
     priority:{anyOf:[{type:'string',enum:['High','Medium','Low']},{type:'null'}]},
     area:{anyOf:[{type:'string',enum:AREAS},{type:'null'}]},
@@ -46,7 +48,8 @@ function schema(){
     person:nul('string'),fit_type:{anyOf:[{type:'string',enum:['workout','weight','steps','water','sleep','meal']},{type:'null'}]},
     activity:{anyOf:[{type:'string',enum:['run','walk','bike','swim','strength','yoga','hike','sports','other']},{type:'null'}]},
     minutes:nul('number'),miles:nul('number'),value:nul('number'),calories:nul('number'),protein:nul('number'),
-    meal_slot:{anyOf:[{type:'string',enum:['breakfast','lunch','dinner','snack']},{type:'null'}]}}}}}};
+    meal_slot:{anyOf:[{type:'string',enum:['breakfast','lunch','dinner','snack']},{type:'null'}]},
+    goal_id:nul('string'),aisle:{anyOf:[{type:'string',enum:window.Grocery?window.Grocery.AISLES:['Other']},{type:'null'}]}}}}}};
 }
 function context(){
  const today=day(),d=new Date();
@@ -57,6 +60,8 @@ function context(){
   ctx.MONEY_THIS_MONTH={income:$(s.income),spent:$(s.spent),by_category:Object.fromEntries(Object.entries(s.byCategory).map(([k,v])=>[k,$(v)])),budgets:Object.fromEntries(Object.entries(s.budgets).map(([k,v])=>[k,$(v)])),recent:s.recent.map(t=>({...t,amount:$(t.amount)}))};
   ctx.BILLS=s.bills.map(b=>({bill_id:b.id,name:b.name,amount:$(b.amount),due_day:b.dueDay,paid_this_month:b.paidThisMonth}));
   ctx.EXPENSE_CATEGORIES=window.Finance.EXPENSE;ctx.INCOME_CATEGORIES=window.Finance.INCOME;}
+ if(window.Savings){const $=c=>Math.round(c)/100;ctx.SAVINGS_GOALS=window.Savings.goals().map(g=>{const st=window.Savings.status(g);return {goal_id:g.id,name:g.name,target:$(g.target),saved:$(st.saved),deadline:g.deadline,needed_per_month:st.perMonth!=null?$(st.perMonth):null,on_track:st.onTrack};});}
+ if(window.Grocery)ctx.GROCERY_LIST=window.Grocery.items().map(i=>({name:i.name,qty:i.qty||null,aisle:i.aisle,checked:i.checked}));
  if(window.Fitness){
   ctx.PEOPLE=window.Fitness.people().map(p=>{const s=window.Fitness.stats(p.id);return {name:p.name,goals:p.goals,active_min_last_7_days:s.minutes7,workout_streak_days:s.streak,steps_today:s.stepsToday,water_today:s.waterToday,last_sleep_h:s.sleepLast,latest_weight_lb:s.latestW?+s.latestW.value:null,calories_today:s.calToday,protein_today:s.proteinToday};});
   const mp=window.Fitness.mealPlan(),plan={};for(let i=-1;i<14;i++){const d=plusDays(today,i);if(mp[d])plan[d]=mp[d];}ctx.MEAL_PLAN_NEXT_2_WEEKS=plan;
@@ -101,6 +106,16 @@ function toActions(out){
    else if(k==='meal'){if(!a.note&&!pos(a.calories)){errors.push('A meal had no description.');continue;}actions.push({...base,note:String(a.note||'Meal').slice(0,80),calories:pos(a.calories)&&Math.round(a.calories),protein:pos(a.protein)&&Math.round(a.protein)});}
    else if(['weight','steps','water','sleep'].includes(k)){const v=pos(a.value);if(!v){errors.push('A '+k+' entry had no number.');continue;}actions.push({...base,value:k==='steps'||k==='water'?Math.round(v):Math.round(v*10)/10});}
    else errors.push('Unknown fitness entry.');
+  }else if(a.kind==='goal_create'&&window.Savings){
+   const target=Math.round(Number(a.amount)*100),name=String(a.title||'').trim().slice(0,60);if(!name||!(target>0)){errors.push('A savings goal needs a name and a target.');continue;}
+   actions.push({kind:'goalnew',title:name,amount:target,date:isDate(a.date)?a.date:null});
+  }else if(a.kind==='goal_contribution'&&window.Savings){
+   const g0=window.Savings.goals().find(x=>x.id===a.goal_id),amt=Math.round(Number(a.amount)*100);if(!g0){errors.push('Could not find that savings goal.');continue;}
+   if(!amt){errors.push('No amount for '+g0.name+'.');continue;}if(amt<0&&-amt>window.Savings.saved(g0)){errors.push('Not enough saved in '+g0.name+'.');continue;}
+   actions.push({kind:'goaladd',id:g0.id,title:g0.name,amount:amt,date:isDate(a.date)?a.date:day()});
+  }else if(a.kind==='grocery_add'&&window.Grocery){
+   const name=String(a.title||'').trim();if(!name)continue;const it={name,qty:a.note?String(a.note).slice(0,30):'',aisle:a.aisle};
+   const prev=actions.find(x=>x.kind==='grocery');if(prev)prev.items.push(it);else actions.push({kind:'grocery',items:[it]});
   }else if(a.kind==='meal_plan'&&window.Fitness){
    if(!isDate(a.date)||!window.Fitness.SLOTS.includes(a.meal_slot)||!a.note){errors.push('A meal plan entry was incomplete.');continue;}
    actions.push({kind:'mealplan',date:a.date,slot:a.meal_slot,note:String(a.note).slice(0,120)});
@@ -142,7 +157,7 @@ const panel=document.createElement('div');panel.className='panel';
 function draw(msg){
  const on=store.get(K_ON)==='1',has=!!store.get(K_KEY);
  panel.innerHTML=`<h2>Vector AI (Claude)</h2>
- <p class="hint">When on, Family Save sends what you say, plus your open tasks, bills, this month's money summary and family fitness summary, to Anthropic's Claude to understand free-form requests and answer questions like “what's due this week?” or “how much have I spent on dining?”. You still confirm every change. Built-in rules take over when it's off or you're offline.</p>
+ <p class="hint">When on, Family Save sends what you say, plus your open tasks, bills, this month's money summary, savings goals, grocery list and family fitness summary, to Anthropic's Claude to understand free-form requests and answer questions like “what's due this week?” or “how much have I spent on dining?”. You still confirm every change. Built-in rules take over when it's off or you're offline.</p>
  <label>Anthropic API key</label><input id="aiKey" type="password" autocomplete="off" placeholder="${has?'Saved — paste a new key to replace':'sk-ant-…'}">
  <div class="actions" style="margin-top:10px"><button class="btn" data-ai="save">Save key</button><button class="btn alt" data-ai="toggle"${has?'':' disabled'}>${on?'Turn AI off':'Turn AI on'}</button><button class="btn alt" data-ai="test"${has?'':' disabled'}>Test</button>${has?'<button class="btn danger sm" data-ai="forget">Forget key</button>':''}</div>
  <p class="hint" id="aiStatus" role="status">${msg||(on&&has?'AI is on.':has?'AI is off.':'Get a key at console.anthropic.com → API keys. It stays in this browser only and is not included in backups.')}</p>

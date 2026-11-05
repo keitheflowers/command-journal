@@ -35,7 +35,8 @@ function metrics(){
  // bills still unpaid this month (due later or already late)
  const unpaid=f.bills.filter(b=>!b.paid?.[cur]);
  const unpaidTotal=unpaid.reduce((a,b)=>a+b.amount,0);
- const safe=m.income?m.income-m.spend-unpaidTotal:null;
+ const setAside=window.Savings?window.Savings.monthSaved(cur):0;
+ const safe=m.income?m.income-m.spend-unpaidTotal-setAside:null;
  // savings rate vs average of prior months that had income
  const rate=m.income?(m.income-m.spend)/m.income:null;
  const prevRates=prev.map(k=>byMonth[k]||{income:0,spend:0}).filter(x=>x.income>0).map(x=>(x.income-x.spend)/x.income);
@@ -71,7 +72,7 @@ function metrics(){
  const stuck=open.filter(t=>(t.rollovers||0)>=2||t.scheduled<=day(new Date(td-7*DAY))).sort((a,b)=>(b.rollovers||0)-(a.rollovers||0)||a.scheduled.localeCompare(b.scheduled));
  const sched30=tasks.filter(t=>t.scheduled>=day(new Date(td-30*DAY))&&t.scheduled<=today);
  const doneRate=sched30.length?sched30.filter(t=>t.status==='done').length/sched30.length:null;
- return {cur,dom,N,months,byMonth,m,unpaid,unpaidTotal,safe,rate,rateAvg,projected,budget,lastSpend,cumThis,cumLast,catRows,soon,
+ return {setAside,cur,dom,N,months,byMonth,m,unpaid,unpaidTotal,safe,rate,rateAvg,projected,budget,lastSpend,cumThis,cumLast,catRows,soon,
   weeks,doneBy,thisWeek,overdue,stuck,doneRate,openCount:open.length,hasMoney:f.txns.length>0,hasTasks:tasks.length>0};
 }
 function insights(M){
@@ -86,6 +87,7 @@ function insights(M){
  const next=M.soon.filter(b=>b.diff>=0&&b.diff<=7);if(next.length)out.push(['info',`${next.length} bill${next.length>1?'s':''} due this week, totaling ${$(next.reduce((a,b)=>a+b.amount,0))}.`]);
  if(M.rate!==null&&M.rateAvg!==null&&Math.abs(M.rate-M.rateAvg)>=0.05)out.push([M.rate>M.rateAvg?'good':'warn',`Saving ${Math.round(M.rate*100)}% of income this month vs ${Math.round(M.rateAvg*100)}% on average.`]);
  if(M.stuck.length)out.push(['warn',`${M.stuck.length} task${M.stuck.length>1?'s have':' has'} been pushed back repeatedly. Worth deciding or dropping.`]);
+ if(window.Savings){const behind=window.Savings.goals().filter(g=>{const st=window.Savings.status(g);return st.onTrack===false;});for(const g of behind.slice(0,2)){const st=window.Savings.status(g);out.push(['warn',`${g.name} is behind schedule: put about ${$(st.perMonth)} a month toward it to reach ${$(g.target)} on time.`]);}}
  if(window.Fitness){const idle=window.Fitness.people().filter(p=>{const st=window.Fitness.stats(p.id);return p.goals.activeMin&&st.minutes7<p.goals.activeMin*0.5&&data.fitness?.logs?.some(l=>l.personId===p.id);});if(idle.length)out.push(['warn',`${idle.map(p=>p.name).join(' and ')} ${idle.length>1?'are':'is'} under half of the weekly activity goal.`]);}
  if(!out.length&&(M.hasMoney||M.hasTasks))out.push(['good','Nothing needs attention right now.']);
  return out.slice(0,5);
@@ -178,6 +180,12 @@ const css=document.createElement('style');css.textContent=`
 document.head.appendChild(css);
 const showTable={};
 function card(id,title,cap,body,tableHtml){return `<div class="panel dz-card" id="dz-${id}">${tableHtml?`<button class="btn alt sm dz-tbtn" data-dzt="${id}">${showTable[id]?'Chart':'Table'}</button>`:''}<h2>${title}</h2>${cap?`<p class="dz-cap">${cap}</p>`:''}${showTable[id]&&tableHtml?tableHtml:body}</div>`;}
+function goalsCard(){
+ if(!window.Savings)return '';const gs=window.Savings.goals();
+ if(!gs.length)return `<div class="panel"><h2>Savings goals</h2><div class="dz-empty">Add a goal in Money, like a vacation or emergency fund, to track progress here.</div></div>`;
+ return `<div class="panel"><h2>Savings goals</h2><p class="dz-cap">Saved vs target · tick = where a steady pace would be today</p>${gs.map(g=>{const s=window.Savings.status(g);
+  return `<div class="dz-cat"><div class="top"><span>${esc(g.name)}</span><span>${$(s.saved)} / ${$(g.target)}</span></div><div class="dz-track"><i style="width:${s.pct*100}%"></i>${s.expected!=null&&!s.done?`<u style="left:${Math.min(100,s.expected/g.target*100)}%"></u>`:''}</div><div class="meta">${s.done?'<span class="dz-good">✅ reached</span>':g.deadline?`${s.onTrack?'<span class="dz-good">✅ on track</span>':'<span class="dz-warn">⚠️ behind</span>'} · ${$(s.perMonth)}/mo needed`:`${Math.round(s.pct*100)}% · no deadline`}</div></div>`;}).join('')}</div>`;
+}
 function fitnessCard(){
  if(!window.Fitness)return '';const people=window.Fitness.people();const rows=people.map(p=>({p,s:window.Fitness.stats(p.id)}));
  if(!rows.some(r=>r.s.minutes7||r.s.latestW||r.s.stepsToday))return `<div class="panel"><h2>Family fitness</h2><div class="dz-empty">Log workouts or weigh-ins in Fitness to see everyone’s week here.</div></div>`;
@@ -204,7 +212,7 @@ function render(){
  section.innerHTML=`
  <div class="panel"><div class="muted small">Safe to spend · ${monthName(M.cur,{month:'long'})}</div>
   <div class="dz-hero ${M.safe!==null&&M.safe<0?'dz-bad':''}">${fmtSafe}</div>
-  <div class="dz-sub">${M.safe===null?'Add this month’s income in Money to see what’s left after bills.':`Income ${$(M.m.income)} − spent ${$(M.m.spend)} − unpaid bills ${$(M.unpaidTotal)}`}</div>
+  <div class="dz-sub">${M.safe===null?'Add this month’s income in Money to see what’s left after bills.':`Income ${$(M.m.income)} − spent ${$(M.m.spend)} − unpaid bills ${$(M.unpaidTotal)}${M.setAside?` − saved ${$(M.setAside)}`:''}`}</div>
   <div class="dz-tiles">${tiles.map(t=>`<div class="dz-tile"><div class="l">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join('')}</div></div>
  ${ins.length?`<div class="panel"><h2>What needs attention</h2><ul class="dz-ins">${ins.map(([k,t])=>`<li><b aria-hidden="true">${icon[k]}</b><span>${esc(t)}</span></li>`).join('')}</ul></div>`:''}
  ${card('pace','Spending pace','Running total this month vs last month'+(M.budget?', with your budget line':''),M.hasMoney?legend([[C.s1,'This month',1],[C.muted,'Last month',1]])+pace.svg:'<div class="dz-empty">Record spending in Money to see your pace.</div>',M.hasMoney&&pace.table)}
@@ -212,6 +220,7 @@ function render(){
  ${card('cats','Where the money goes',`${monthName(M.cur,{month:'long'})} so far, compared with your normal`,catsHtml,M.catRows.length&&table(['Category','This month','3-mo avg','Budget'],M.catRows.map(x=>[esc(x.c),$(x.now),x.avg?$(x.avg):'—',x.budget?$(x.budget):'—'])))}
  <div class="panel"><h2>Bills coming up</h2>${M.soon.length?M.soon.map(b=>`<div class="dz-row"><div>${esc(b.name)}<div class="s">${pd(b.due).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})} · ${b.diff<0?`<span class="dz-bad">⛔ ${-b.diff}d late</span>`:b.diff===0?'<span class="dz-warn">⚠️ due today</span>':`in ${b.diff}d`}</div></div><div>${$(b.amount,{cents:true})}</div></div>`).join(''):'<div class="dz-empty">No unpaid bills in the next 14 days.</div>'}</div>
  ${card('weeks','Getting things done',`Tasks completed per week${M.doneRate!==null?` · ${Math.round(M.doneRate*100)}% of tasks scheduled in the last 30 days are done`:''}`,M.hasTasks?wk.svg:'<div class="dz-empty">No tasks yet.</div>',M.hasTasks&&wk.table)}
+ ${goalsCard()}
  ${fitnessCard()}
  <div class="panel"><h2>Stuck tasks</h2><p class="dz-cap">Pushed back 2+ times, or scheduled over a week ago and still open</p>${M.stuck.length?M.stuck.slice(0,6).map(t=>`<div class="dz-row"><div>${esc(t.title)}<div class="s">${esc(t.area)} · scheduled ${pd(t.scheduled).toLocaleDateString(undefined,{month:'short',day:'numeric'})}${t.rollovers?` · ↪ ${t.rollovers}×`:''}</div></div><button class="btn alt sm" onclick="openTaskForm('${esc(t.id)}')">Edit</button></div>`).join(''):'<div class="dz-empty">Nothing stuck. 👍</div>'}</div>`;
  // interactions
