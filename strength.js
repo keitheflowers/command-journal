@@ -133,7 +133,44 @@ function applyNext(planId,sess){const p=F().plans.find(x=>x.id===planId);if(!p)r
 window.Strength={parseSets,plans,sessions,findPlan,matchPlan,createPlan,buildSession,analyze,summary,saveSession,key,sim,muscle};
 
 // ---- view -------------------------------------------------------------
-let sel=null,editing=null,draftText='',draftDays=[],active=null,result=null,openEx=null;
+let sel=null,editing=null,draftText='',draftDays=[],active=null,result=null,openEx=null,showLib=false;
+// ---- Program library ---------------------------------------------------
+// Weights are set from each person's 1-rep maxes (B bench, S squat, D deadlift,
+// P overhead press), rounded to 5 lb. Double progression: when every set hits
+// its reps, the app suggests adding weight next time.
+const MAXES=[['B','Bench press','bench'],['S','Back squat','back squat'],['D','Deadlift','deadlift'],['P','Overhead press','overhead press']];
+const X=(name,sets,reps,pct,of,bw)=>({name,sets,reps,pct,of,bw});
+const PROGRAMS=[
+ {id:'ul4',name:'Upper / Lower · 4 days',tag:'Strength + size · intermediate',
+  about:'Two heavy days for strength (low reps) and two volume days for muscle (higher reps). Mon Upper A, Tue Lower A, Thu Upper B, Fri Lower B. Rest at least 2–3 min on main lifts and 60–90 s on the rest. Every 6th week, do the same workouts about 10% lighter to recover.',
+  plans:[
+   {name:'Upper A (Heavy)',days:[1],ex:[X('Bench Press',4,5,.80,'B'),X('Barbell Row',4,6,.62,'B'),X('Overhead Press',3,6,.75,'P'),X('Lat Pulldown',3,8,.50,'B'),X('Barbell Curl',3,10,.25,'B'),X('Tricep Pushdown',3,12,.24,'B')]},
+   {name:'Lower A (Heavy)',days:[2],ex:[X('Back Squat',4,5,.80,'S'),X('Romanian Deadlift',3,8,.55,'D'),X('Leg Press',3,10,1.30,'S'),X('Lying Leg Curl',3,12,.22,'S'),X('Standing Calf Raise',4,12,.45,'S'),X('Hanging Leg Raise',3,12,0,null,true)]},
+   {name:'Upper B (Volume)',days:[4],ex:[X('Incline DB Press',4,10,.28,'B'),X('Seated Cable Row',4,10,.50,'B'),X('DB Shoulder Press',3,10,.30,'P'),X('Pull Up',3,8,0,null,true),X('Lateral Raise',3,15,.07,'B'),X('Dips',3,12,0,null,true),X('Hammer Curl',3,12,.12,'B')]},
+   {name:'Lower B (Volume)',days:[5],ex:[X('Deadlift',3,5,.80,'D'),X('Bulgarian Split Squat DB',3,8,.14,'S'),X('Hip Thrust',3,10,.70,'S'),X('Leg Extension',3,12,.30,'S'),X('Seated Calf Raise',3,15,.30,'S'),X('Cable Crunch',3,15,.25,'S')]}]},
+ {id:'fb3',name:'Full Body · 3 days',tag:'Beginner friendly · great for getting started',
+  about:'Every major muscle three times a week with moderate weights and clean form. Alternate A and B on Mon, Wed and Fri (A/B/A one week, B/A/B the next). Start lighter than you think. Adding a little weight every week is the goal.',
+  plans:[
+   {name:'Full Body A',days:[1,5],ex:[X('Back Squat',3,8,.65,'S'),X('Bench Press',3,8,.65,'B'),X('Barbell Row',3,10,.50,'B'),X('DB Shoulder Press',2,12,.22,'P'),X('Plank (seconds)',3,45,0,null,true)]},
+   {name:'Full Body B',days:[3],ex:[X('Deadlift',3,5,.70,'D'),X('Overhead Press',3,8,.65,'P'),X('Lat Pulldown',3,10,.45,'B'),X('Goblet Squat',3,12,.15,'S'),X('Hammer Curl',2,12,.10,'B')]}]}];
+const r5=v=>Math.max(5,Math.round(v/5)*5);
+function guessMaxes(pid){const out={};for(const [k,,n] of MAXES){const h=historyFor(pid,n).filter(x=>!x.bw);if(h.length)out[k]=Math.round(Math.max(...h.slice(-6).map(x=>x.e1)));}return out;}
+function installProgram(pid,prog,maxes){
+ const names=new Set(prog.plans.map(p=>p.name.toLowerCase()));
+ F().plans=F().plans.filter(p=>!(p.personId===pid&&names.has(p.name.toLowerCase())));
+ for(const pl of prog.plans)createPlan({personId:pid,name:pl.name,days:pl.days,exercises:pl.ex.map(e=>({name:e.name,sets:[...Array(e.sets)].map(()=>({w:e.bw?0:r5(e.pct*maxes[e.of]),r:e.reps}))}))});
+ return prog.plans.length;
+}
+window.Strength.PROGRAMS=PROGRAMS;window.Strength.installProgram=installProgram;
+function libraryHtml(pid){
+ const g=guessMaxes(pid);
+ return `<div class="panel" id="st-lib"><div class="header"><h2>📋 Program library</h2><button class="btn alt sm" data-st="lib">Close</button></div>
+  <p class="hint" style="margin:0 0 6px">Enter your best single-rep weights (1-rep max). Don’t know one? Take a weight you can lift for 5 clean reps and multiply by 1.15. ${Object.keys(g).length?'Some are filled in from your logged workouts.':''}</p>
+  <div class="two">${MAXES.map(([k,l])=>`<div><label>${l} 1RM (lb)</label><input id="stMax${k}" inputmode="numeric" value="${g[k]||''}" placeholder="e.g. ${({B:225,S:275,D:315,P:135})[k]}"></div>`).join('')}</div>
+  ${PROGRAMS.map(pr=>`<div class="st-plan" style="margin-top:10px"><div class="t"><b>${pr.name}</b></div><div class="x2"><b style="color:#9fd9ec">${pr.tag}</b><br>${pr.about}</div>
+   <div class="x2" style="margin-top:6px">${pr.plans.map(pl=>`<b style="color:${C.ink}">${pl.name}</b> · ${pl.days.map(d=>DOWN[d]).join(', ')}<br>${pl.ex.map(e=>`${e.name} ${e.sets}×${e.reps}`).join(' · ')}`).join('<br>')}</div>
+   <button class="btn sm" style="margin-top:8px" data-st="install" data-id="${pr.id}">Install for ${esc((window.Fitness.people().find(p=>p.id===pid)||{}).name||'me')}</button></div>`).join('')}</div>`;
+}
 const section=document.createElement('section');section.id='strength';section.className='view hidden';
 const settings=document.getElementById('settings');settings.parentNode.insertBefore(section,settings);
 const tabs=document.getElementById('tabs'),tab=document.createElement('button');tab.className='tab';tab.dataset.view='strength';tab.textContent='Strength';
@@ -245,7 +282,8 @@ function render2(){
   ${!active?`<div style="margin-top:12px">${todays.length?todays.map(p=>`<div class="notice" style="margin:0 0 8px;display:flex;align-items:center;gap:10px"><span style="flex:1">📅 <b>${esc(p.name)}</b> is planned for today</span><button class="btn sm" data-st="start" data-id="${p.id}">Start</button></div>`).join(''):''}
    <div class="actions"><select id="stPick" style="flex:1;min-width:0">${P.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}<option value="">Empty workout</option></select><button class="btn" data-st="startpick">Start workout</button></div></div>`:''}</div>
   ${result?resultCard():''}${active?sessionEditor():''}
-  ${editing?planEditor(sel):`<div class="panel"><div class="header"><h2>Workout plans</h2><button class="btn sm" data-st="newplan">+ Plan</button></div>
+  ${showLib?libraryHtml(sel):''}
+  ${editing?planEditor(sel):`<div class="panel"><div class="header"><h2>Workout plans</h2><div class="actions"><button class="btn alt sm" data-st="lib">📋 Programs</button><button class="btn sm" data-st="newplan">+ Plan</button></div></div>
    ${P.length?P.map(p=>`<div class="st-plan"><div class="t"><b>${esc(p.name)}</b>${(p.days||[]).length?`<span class="muted small">${p.days.map(d=>DOWN[d]).join(' · ')}</span>`:''}</div><div class="x2">${p.exercises.map(e=>`${esc(e.name)} <span style="color:${C.ink2}">${fmtSets(e.sets)}</span>`).join('<br>')}</div>
     <div class="actions" style="margin-top:8px"><button class="btn sm" data-st="start" data-id="${p.id}">Start</button><button class="btn alt sm" data-st="edit" data-id="${p.id}">Edit</button><button class="x" data-st="delplan" data-id="${p.id}" aria-label="Delete plan">✕</button></div></div>`).join('')
    :'<div class="empty">No plans yet. Tap + Plan, or say “Vector, open Family Save, plan chest day: flat bench 225 for 15, 315 for 10, 405 for 8”.</div>'}</div>`}
@@ -263,6 +301,12 @@ section.addEventListener('click',e=>{
  const b=e.target.closest('[data-st]');if(!b||b.tagName==='INPUT')return;const a=b.dataset.st,f=F();
  if(a==='who'){sel=b.dataset.id;active=null;result=null;editing=null;}
  else if(a==='newplan'){editing='new';draftText='';draftDays=[];}
+ else if(a==='lib'){showLib=!showLib;}
+ else if(a==='install'){const pr=PROGRAMS.find(x=>x.id===b.dataset.id),mx={};
+  for(const [k,l] of MAXES){const v=parseFloat(document.getElementById('stMax'+k).value);if(pr.plans.some(pl=>pl.ex.some(e=>e.of===k))&&!(v>0)){toast('Enter your '+l+' 1-rep max (or an estimate).');return;}mx[k]=v;}
+  const clash=plans(sel).filter(p=>pr.plans.some(pl=>pl.name.toLowerCase()===p.name.toLowerCase()));
+  if(clash.length&&!confirm(`Replace your existing ${clash.map(p=>p.name).join(', ')} plan${clash.length>1?'s':''}?`))return;
+  const n=installProgram(sel,pr,mx);showLib=false;toast(`Installed ${n} workouts: ${pr.name}.`);}
  else if(a==='edit'){const p=f.plans.find(x=>x.id===b.dataset.id);editing=p.id;draftText=toText(p);draftDays=[...(p.days||[])];}
  else if(a==='day'){const v=+b.dataset.v;draftDays=draftDays.includes(v)?draftDays.filter(x=>x!==v):[...draftDays,v].sort();b.classList.toggle('on');return;}
  else if(a==='cancel'){editing=null;}
