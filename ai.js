@@ -7,7 +7,7 @@
 'use strict';
 const MODEL='claude-opus-5-5';
 const SDK_URL='./vendor/anthropic-sdk-0.137.0.js';
-const K_KEY='vectorAiKey',K_ON='vectorAiOn';
+const K_KEY='vectorAiKey',K_ON='vectorAiOn',K_PLAIN='vectorAiPlain';let lastNote='';
 const store={get:k=>{try{return localStorage.getItem(k)||'';}catch(_){return '';}},set:(k,v)=>{try{v?localStorage.setItem(k,v):localStorage.removeItem(k);}catch(_){}}};
 let sdk=null,history=[];
 
@@ -84,6 +84,7 @@ function explain(e){
  if(e instanceof sdk.PermissionDeniedError)return 'This API key is not allowed to use '+MODEL+'.';
  if(e instanceof sdk.RateLimitError)return 'Rate limited by the API. Try again in a moment.';
  if(e instanceof sdk.APIConnectionError)return 'Could not reach the AI service (offline?).';
+ if(e instanceof sdk.BadRequestError)return 'The AI service rejected the request (400): '+(e.message||'')+'. Tap Test in Settings and send me this message.';
  if(e instanceof sdk.APIError)return 'AI service error'+(e.status?' ('+e.status+')':'')+': '+(e.message||'');
  return e.message||String(e);
 }
@@ -140,19 +141,21 @@ function toActions(out){
  return {actions,errors,reply:String(out.reply||'').trim()};
 }
 async function interpret(text){
- const c=await client();
+ lastNote='';const c=await client();
  const recent=history.slice(-6).map(h=>`${h.role}: ${h.text}`).join('\n');
  const user=`CONTEXT:\n${JSON.stringify(context())}\n\n${recent?'RECENT CONVERSATION:\n'+recent+'\n\n':''}REQUEST:\n${text}`;
- const res=await c.beta.messages.create({
-  model:MODEL,max_tokens:16000,
-  betas:['server-side-fallback-2026-07-01'],fallbacks:'default',
-  output_config:{effort:'low',format:{type:'json_schema',schema:schema()}},
-  system:SYSTEM,messages:[{role:'user',content:user}]
- });
+ // Structured output first; if the API rejects the schema (400), retry once
+ // with the schema in the instructions and remember to skip it next time.
+ const base={model:MODEL,max_tokens:16000,betas:['server-side-fallback-2026-07-01'],fallbacks:'default',messages:[{role:'user',content:user}]};
+ const plain=()=>c.beta.messages.create({...base,output_config:{effort:'low'},system:SYSTEM+'\n\nRespond with ONLY one JSON object (no markdown, no prose) that matches this JSON Schema:\n'+JSON.stringify(schema())});
+ let res;
+ if(store.get(K_PLAIN)==='1')res=await plain();
+ else{try{res=await c.beta.messages.create({...base,output_config:{effort:'low',format:{type:'json_schema',schema:schema()}},system:SYSTEM});}
+  catch(e){if(!(sdk&&e instanceof sdk.BadRequestError))throw e;store.set(K_PLAIN,'1');lastNote='Structured output was rejected ('+(e.message||'400')+'); using plain JSON instead.';res=await plain();}}
  if(res.stop_reason==='refusal')throw new Error('The AI declined this request.');
  if(res.stop_reason==='max_tokens')throw new Error('The AI response was cut off.');
  const txt=res.content.filter(b=>b.type==='text').map(b=>b.text).join('');
- let out;try{out=JSON.parse(txt);}catch(_){throw new Error('The AI returned an unreadable answer.');}
+ let out;try{out=JSON.parse(txt);}catch(_){const i=txt.indexOf('{'),j=txt.lastIndexOf('}');try{out=JSON.parse(txt.slice(i,j+1));}catch(__){throw new Error('The AI returned an unreadable answer.');}}
  const r=toActions(out);
  history.push({role:'user',text},{role:'vector',text:r.reply||r.actions.map(a=>a.kind+' '+(a.title||a.note||'')).join('; ')});
  if(history.length>12)history=history.slice(-12);
@@ -180,7 +183,7 @@ panel.addEventListener('click',async e=>{
  if(a==='save'){const v=document.getElementById('aiKey').value.trim();if(!/^sk-ant-/.test(v)){draw('That doesn’t look like an Anthropic API key (it should start with sk-ant-).');return;}store.set(K_KEY,v);store.set(K_ON,'1');draw('Key saved and AI turned on. Tap Test to check it.');}
  else if(a==='toggle'){store.set(K_ON,store.get(K_ON)==='1'?'':'1');draw();}
  else if(a==='forget'){if(!confirm('Remove the saved API key from this phone?'))return;store.set(K_KEY,'');store.set(K_ON,'');draw('Key removed.');}
- else if(a==='test'){draw('Testing…');try{const r=await window.VectorAI.interpret('What is on my list for today?');window.VectorAI.reset();draw('✓ Working. Vector says: “'+(r.reply||'OK')+'”');}catch(err){draw('✗ '+err.message);}}
+ else if(a==='test'){draw('Testing…');try{const r=await window.VectorAI.interpret('What is on my list for today?');window.VectorAI.reset();draw('✓ Working. Vector says: “'+(r.reply||'OK')+'”'+(lastNote?' ('+lastNote+')':''));}catch(err){draw('✗ '+err.message);}}
 });
 draw();
 const settings=document.getElementById('settings');settings.insertBefore(panel,settings.firstChild);

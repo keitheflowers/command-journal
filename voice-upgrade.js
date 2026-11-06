@@ -241,16 +241,16 @@ window.interpretCommand=async function(){
   let result=null,usedAI=false,my=++seq;
   if(window.VectorAI&&window.VectorAI.enabled()&&navigator.onLine!==false){
     box.innerHTML='<strong>🧠 Vector is thinking…</strong>';
-    try{result=await window.VectorAI.interpret(raw);usedAI=true;}catch(e){toast(e.message+' Using built-in rules.');}
+    var aiErr='';try{result=await window.VectorAI.interpret(raw);usedAI=true;}catch(e){aiErr=e.message;toast(e.message+' Using built-in rules.');}
     if(my!==seq||document.getElementById('command').value.trim()!==raw)return; // superseded or edited meanwhile
   }
   if(!result)result=parse(raw);
   let actions=result.actions,errors=result.errors,reply=result.reply||'';
   if(!actions.length){
     if(reply){window.lastVectorReply=reply;box.innerHTML='<strong>Vector</strong><p class="hint" style="font-size:14px;color:#e3eef6">'+esc(reply)+'</p>'+(errors.length?'<p class="hint">'+errors.map(esc).join('; ')+'</p>':'');return;}
-    box.innerHTML='<strong>No changes made.</strong><p class="hint">'+errors.map(esc).join('; ')+'</p>';return;
+    box.innerHTML='<strong>No changes made.</strong><p class="hint">'+errors.map(esc).join('; ')+'</p>'+(typeof aiErr!=='undefined'&&aiErr?'<p class="hint" style="color:#ff8a8a">Vector AI didn’t answer: '+esc(aiErr)+'</p>':'');return;
   }
-  if(errors.length&&!usedAI){box.innerHTML='<strong>No changes made.</strong><p class="hint">'+errors.map(esc).join('; ')+'</p>';return;}
+  if(errors.length&&!usedAI){box.innerHTML='<strong>No changes made.</strong><p class="hint">'+errors.map(esc).join('; ')+'</p>';if(typeof aiErr!=='undefined'&&aiErr)box.innerHTML+='<p class="hint" style="color:#ff8a8a">Vector AI didn’t answer: '+esc(aiErr)+'</p>';return;}
   let when=d=>{if(d===day())return 'today';if(d===plusDays(day(),1))return 'tomorrow';const [y,m,dd]=d.split('-').map(Number);const t=new Date(y,m-1,dd);return t.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:y===new Date().getFullYear()?undefined:'numeric'});};
   let $=c=>window.Finance?window.Finance.money(c):'$'+(c/100).toFixed(2);
   let FIT=a=>window.Fitness?window.Fitness.describe({kind:a.fkind,activity:a.activity,minutes:a.minutes,miles:a.miles,value:a.value,note:a.note,calories:a.calories,protein:a.protein}):a.fkind;
