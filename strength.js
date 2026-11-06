@@ -140,7 +140,18 @@ let sel=null,editing=null,draftText='',draftDays=[],active=null,result=null,open
 // its reps, the app suggests adding weight next time.
 const MAXES=[['B','Bench press','bench'],['S','Back squat','back squat'],['D','Deadlift','deadlift'],['P','Overhead press','overhead press']];
 const X=(name,sets,reps,pct,of,bw)=>({name,sets,reps,pct,of,bw});
+const PY=(name,of,scheme)=>({name,of,scheme,sets:scheme.length,reps:scheme[0][1]}); // pyramid: heavier each set, fewer reps
 const PROGRAMS=[
+ {id:'bro7',name:'Body-part split · 7 days',tag:'One muscle group a day · pyramid sets',
+  about:'Each muscle gets one hard day a week. Main lifts are pyramids: the weight goes up and the reps go down every set. Mon Chest, Tue Back, Wed Shoulders & Shrugs, Thu Legs, Fri Biceps, Sat Triceps & Abs, Sun Active Recovery (core plus 30–40 min of easy cardio). Rest 2–3 min on pyramid lifts and 60–90 s on the rest. Training 7 days straight is a lot, so keep Sunday easy, sleep well, and every 6th week go about 10% lighter.',
+  plans:[
+   {name:'Chest Day',days:[1],ex:[PY('Flat Bench Press','B',[[.60,12],[.70,10],[.77,8],[.82,6]]),X('Incline Bench Press',3,8,.62,'B'),X('Incline DB Press',3,10,.27,'B'),X('Weighted Dips',3,10,0,null,true),X('Cable Fly',3,15,.12,'B'),X('Push Ups',2,20,0,null,true)]},
+   {name:'Back Day',days:[2],ex:[PY('Deadlift','D',[[.60,8],[.70,6],[.78,5],[.83,3]]),X('Pull Up',4,8,0,null,true),X('Barbell Row',4,8,.58,'B'),X('Lat Pulldown',3,10,.50,'B'),X('Seated Cable Row',3,12,.45,'B'),X('Straight Arm Pulldown',3,15,.18,'B')]},
+   {name:'Shoulders & Shrugs',days:[3],ex:[PY('Overhead Press','P',[[.65,10],[.72,8],[.78,6],[.83,4]]),X('DB Shoulder Press',3,10,.30,'P'),X('Lateral Raise',4,15,.07,'B'),X('Rear Delt Fly',3,15,.06,'B'),X('Face Pull',3,15,.15,'B'),PY('Barbell Shrug','D',[[.45,15],[.55,12],[.62,10],[.68,8]]),X('DB Shrug',3,15,.20,'D')]},
+   {name:'Leg Day',days:[4],ex:[PY('Back Squat','S',[[.60,10],[.70,8],[.77,6],[.82,5]]),X('Leg Press',4,12,1.20,'S'),X('Romanian Deadlift',3,10,.50,'D'),X('Walking Lunge DB',3,12,.12,'S'),X('Leg Extension',3,15,.28,'S'),X('Lying Leg Curl',3,12,.22,'S'),X('Standing Calf Raise',4,15,.40,'S')]},
+   {name:'Biceps Day',days:[5],ex:[PY('Barbell Curl','B',[[.20,12],[.23,10],[.26,8],[.28,6]]),X('Incline DB Curl',3,10,.09,'B'),X('Preacher Curl',3,10,.20,'B'),X('Hammer Curl',3,12,.11,'B'),X('Cable Curl',3,15,.15,'B'),X('Reverse Curl',3,15,.13,'B')]},
+   {name:'Triceps & Abs',days:[6],ex:[PY('Close Grip Bench','B',[[.55,12],[.62,10],[.68,8],[.72,6]]),X('Skull Crusher',3,10,.25,'B'),X('Tricep Pushdown',3,12,.24,'B'),X('Overhead Cable Extension',3,12,.20,'B'),X('Bench Dips',3,15,0,null,true),X('Hanging Leg Raise',3,15,0,null,true),X('Cable Crunch',3,15,.25,'S')]},
+   {name:'Active Recovery',days:[0],ex:[X('Plank (seconds)',3,60,0,null,true),X('Side Plank (seconds)',2,45,0,null,true),X('Ab Wheel',3,12,0,null,true),X('Back Extension',3,15,0,null,true)]}]},
  {id:'ul4',name:'Upper / Lower · 4 days',tag:'Strength + size · intermediate',
   about:'Two heavy days for strength (low reps) and two volume days for muscle (higher reps). Mon Upper A, Tue Lower A, Thu Upper B, Fri Lower B. Rest at least 2–3 min on main lifts and 60–90 s on the rest. Every 6th week, do the same workouts about 10% lighter to recover.',
   plans:[
@@ -158,7 +169,7 @@ function guessMaxes(pid){const out={};for(const [k,,n] of MAXES){const h=history
 function installProgram(pid,prog,maxes){
  const names=new Set(prog.plans.map(p=>p.name.toLowerCase()));
  F().plans=F().plans.filter(p=>!(p.personId===pid&&names.has(p.name.toLowerCase())));
- for(const pl of prog.plans)createPlan({personId:pid,name:pl.name,days:pl.days,exercises:pl.ex.map(e=>({name:e.name,sets:[...Array(e.sets)].map(()=>({w:e.bw?0:r5(e.pct*maxes[e.of]),r:e.reps}))}))});
+ for(const pl of prog.plans)createPlan({personId:pid,name:pl.name,days:pl.days,exercises:pl.ex.map(e=>({name:e.name,sets:e.scheme?e.scheme.map(([pc,r])=>({w:r5(pc*maxes[e.of]),r})):[...Array(e.sets)].map(()=>({w:e.bw?0:r5(e.pct*maxes[e.of]),r:e.reps}))}))});
  return prog.plans.length;
 }
 window.Strength.PROGRAMS=PROGRAMS;window.Strength.installProgram=installProgram;
@@ -168,7 +179,7 @@ function libraryHtml(pid){
   <p class="hint" style="margin:0 0 6px">Enter your best single-rep weights (1-rep max). Don’t know one? Take a weight you can lift for 5 clean reps and multiply by 1.15. ${Object.keys(g).length?'Some are filled in from your logged workouts.':''}</p>
   <div class="two">${MAXES.map(([k,l])=>`<div><label>${l} 1RM (lb)</label><input id="stMax${k}" inputmode="numeric" value="${g[k]||''}" placeholder="e.g. ${({B:225,S:275,D:315,P:135})[k]}"></div>`).join('')}</div>
   ${PROGRAMS.map(pr=>`<div class="st-plan" style="margin-top:10px"><div class="t"><b>${pr.name}</b></div><div class="x2"><b style="color:#9fd9ec">${pr.tag}</b><br>${pr.about}</div>
-   <div class="x2" style="margin-top:6px">${pr.plans.map(pl=>`<b style="color:${C.ink}">${pl.name}</b> · ${pl.days.map(d=>DOWN[d]).join(', ')}<br>${pl.ex.map(e=>`${e.name} ${e.sets}×${e.reps}`).join(' · ')}`).join('<br>')}</div>
+   <div class="x2" style="margin-top:6px">${pr.plans.map(pl=>`<b style="color:${C.ink}">${pl.name}</b> · ${pl.days.map(d=>DOWN[d]).join(', ')}<br>${pl.ex.map(e=>e.scheme?`${e.name} ${e.sets} sets ${e.scheme.map(x=>x[1]).join('→')}`:`${e.name} ${e.sets}×${e.reps}`).join(' · ')}`).join('<br>')}</div>
    <button class="btn sm" style="margin-top:8px" data-st="install" data-id="${pr.id}">Install for ${esc((window.Fitness.people().find(p=>p.id===pid)||{}).name||'me')}</button></div>`).join('')}</div>`;
 }
 const section=document.createElement('section');section.id='strength';section.className='view hidden';
