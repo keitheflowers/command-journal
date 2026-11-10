@@ -4,12 +4,20 @@ const NOV18 = new Date(2026, 10, 18, 10, 0); // a Wednesday
 module.exports = {
   async 'every tab opens without errors and nothing blocks taps'() {
     const app = await open({ time: NOV18 });
-    const tabs = await app.page.$$eval('#tabs .tab', b => b.map(x => x.dataset.view));
-    assert.ok(tabs.length >= 9, 'expected all tabs, got ' + tabs.join(','));
-    for (const v of tabs) {
-      await app.page.click(`#tabs [data-view="${v}"]`, { timeout: 3000 }); // fails if an overlay intercepts
-      assert.ok(await app.page.$eval('#' + v, e => !e.classList.contains('hidden')), v + ' did not open');
+    const groups = await app.page.$$eval('#mainNav .g button', b => b.map(x => x.textContent.trim()));
+    assert.eq(groups, ['🏠Home', '🗓️Plan', '💵Money', '💪Health', '⚙️Settings'], 'five main tabs');
+    assert.ok(await app.page.$eval('#tabs', e => getComputedStyle(e).display === 'none'), 'old tab row is hidden');
+    const seen = [];
+    for (let i = 0; i < groups.length; i++) {
+      await app.page.click(`#mainNav .g button >> nth=${i}`, { timeout: 3000 }); // fails if an overlay intercepts
+      const subs = await app.page.$$eval('#mainNav .s button', b => b.map(x => x.dataset.v));
+      for (const v of subs.length ? subs : [await app.page.evaluate(() => view)]) {
+        if (subs.length) await app.page.click(`#mainNav .s [data-v="${v}"]`, { timeout: 3000 });
+        assert.ok(await app.page.$eval('#' + v, e => !e.classList.contains('hidden')), v + ' did not open');
+        seen.push(v);
+      }
     }
+    assert.eq(seen, ['today', 'dashboard', 'tasks', 'calendar', 'reviews', 'finance', 'fitness', 'meals', 'strength', 'settings'], 'every screen reachable');
     assert.eq(await app.page.evaluate(() => document.documentElement.scrollWidth), 390, 'page scrolls sideways');
     assert.ok(await app.page.$eval('#lockScreen', e => getComputedStyle(e).display === 'none'), 'lock screen covers the app');
     assert.noErrors(app); await app.close();

@@ -26,11 +26,16 @@ function person(nameOrId){
 function add(log){
  const f=fit(),p=person(log.personId)||f.people[0];
  const e={id:uuid(),personId:p.id,date:log.date||day(),kind:log.kind,created:stamp()};
- for(const k of ['activity','minutes','miles','value','calories','protein','note'])if(log[k]!=null&&log[k]!=='')e[k]=log[k];
+ for(const k of ['activity','minutes','miles','value','calories','protein','carbs','fat','slot','note'])if(log[k]!=null&&log[k]!=='')e[k]=log[k];
+ if(e.kind==='meal'&&!e.slot&&window.Nutrition)e.slot=window.Nutrition.slotForNow(p.id);
  f.logs.push(e);log_('fitness_'+e.kind,p.name+': '+describe(e));return e;
 }
 function log_(type,details){try{log(type,null,details);}catch(_){}}
-function setMeal(date,slot,text){const f=fit();(f.mealPlan[date]=f.mealPlan[date]||{})[slot]=String(text||'').slice(0,120);if(!text)delete f.mealPlan[date][slot];}
+function setMeal(date,slot,text,pid){
+ if(window.Nutrition){const P=person(pid)||fit().people[0],slots=window.Nutrition.N(P.id).slots;const want=String(slot||'').toLowerCase();
+  const s=slots.find(x=>x.id===slot)||slots.find(x=>x.name.toLowerCase()===want)||slots.find(x=>x.name.toLowerCase().includes(want))||(want==='breakfast'?slots[0]:want==='dinner'?slots[slots.length-1]:want==='lunch'?slots[Math.min(1,slots.length-1)]:slots[0]);
+  window.Nutrition.setPlan(P.id,date,s.id,text);return;}
+ const f=fit();(f.mealPlan[date]=f.mealPlan[date]||{})[slot]=String(text||'').slice(0,120);if(!text)delete f.mealPlan[date][slot];}
 function describe(e){
  if(e.kind==='workout')return `${ACT[e.activity]||ACT.other}${e.minutes?' · '+e.minutes+' min':''}${e.miles?' · '+e.miles+' mi':''}${e.note?' · '+e.note:''}`;
  if(e.kind==='weight')return `⚖️ ${e.value} lb`;
@@ -57,7 +62,8 @@ function stats(pid){
   sleepLast:sleepLast?+sleepLast.value:null,sleepAvg:sleep7.length?sleep7.reduce((a,l)=>a+(+l.value),0)/sleep7.length:null,
   calToday:sum('meal','calories',today),proteinToday:sum('meal','protein',today),workouts7:L.filter(l=>l.kind==='workout'&&l.date>=since(6)).length};
 }
-window.Fitness={ACT,SLOTS,add,setMeal,describe,person,people:()=>fit().people,stats,mealPlan:()=>fit().mealPlan};
+window.Fitness={ACT,SLOTS,add,setMeal,describe,person,people:()=>fit().people,stats,mealPlan:()=>fit().mealPlan,
+ selected:()=>{const f=fit();if(!sel||!f.people.some(p=>p.id===sel))sel=f.people[0].id;return sel;},select:id=>{sel=id;}};
 
 // ---- view -------------------------------------------------------------
 let sel=null,entry='workout',showGoals=false,planWeek=0;
@@ -109,7 +115,7 @@ function meter(label,val,unit,goal,extra=''){const pctv=goal?Math.min(100,val/go
  return `<div class="ft-m"><div class="l">${label}</div><div class="v">${val==null?'—':(typeof val==='number'?(+val.toFixed(1)).toLocaleString():val)}${goal?` <small>/ ${goal.toLocaleString()} ${unit}</small>`:` <small>${unit}</small>`}</div>${goal?`<div class="ft-bar"><i style="width:${pctv}%"></i></div>`:''}${extra}</div>`;}
 function form(){
  const today=day(),f=fit(),opts=f.people.map(p=>`<option value="${p.id}"${p.id===sel?' selected':''}>${esc(p.name)}</option>`).join('');
- const kinds=[['workout','Workout'],['weight','Weight'],['steps','Steps'],['sleep','Sleep'],['meal','Meal']];
+ const kinds=[['workout','Workout'],['weight','Weight'],['steps','Steps'],['sleep','Sleep']];
  const fields={
   workout:`<div class="two"><div><label>Activity</label><select id="ftAct">${Object.entries(ACT).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div><div><label>Minutes</label><input id="ftMin" inputmode="numeric" placeholder="30"></div></div><div class="two"><div><label>Distance (miles, optional)</label><input id="ftMi" inputmode="decimal" placeholder="—"></div><div><label>Note</label><input id="ftNote" maxlength="80" placeholder="e.g. legs day"></div></div>`,
   weight:`<label>Weight (lb)</label><input id="ftVal" inputmode="decimal" placeholder="180.5">`,
@@ -121,6 +127,16 @@ function form(){
  <button class="btn full" style="margin-top:12px" data-ft="add">Save</button>
  <p class="hint">Hands-free: “Vector, open Family Save, I ran 3 miles in 30 minutes”, “Amanda walked 20 minutes”, “I weigh 182”, “drank 2 glasses of water”, “slept 7 hours”, “ate a turkey sandwich 450 calories”.</p></div>`;
 }
+function ringsHtml(P,S){
+ const g=P.goals,N=window.Nutrition,nt=N?N.N(P.id):null,tot=N?N.totals(N.mealsOn(P.id,day())):{p:0,cal:0},fast=N?N.activeFast(P.id):null;
+ const today=S.days[6]?S.days[6].min:0,moveGoal=g.activeMin?Math.round(g.activeMin/7):30;
+ const R=[['Move',today,moveGoal,'min','#46d9f5'],['Protein',tot.p,nt&&nt.targets&&nt.targets.p,'g','#3fd16b'],['Sleep',S.sleepLast||0,g.sleep||8,'h','#9085e9'],['Water',S.waterToday,g.water||8,'gl','#3987e5']];
+ const ring=(v,goal,col)=>{const r=26,c=2*Math.PI*r,p=goal?Math.min(1,v/goal):0;return `<svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="${r}" fill="none" stroke="#14263a" stroke-width="7"/><circle cx="32" cy="32" r="${r}" fill="none" stroke="${col}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${c*p} ${c}" transform="rotate(-90 32 32)"/>${p>=1?'<text x="32" y="37" text-anchor="middle" font-size="15" fill="#fff">✓</text>':''}</svg>`;};
+ let next='';if(window.Strength){const pl=window.Strength.plans(P.id).find(x=>(x.days||[]).includes(new Date().getDay()));if(pl)next=`🏋️ <b>${esc(pl.name)}</b> is planned today`;}
+ return `<div class="panel"><div class="header"><h2>${esc(P.name)} · today</h2><span class="muted small">${S.streak?`🔥 ${S.streak}-day streak`:''}</span></div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center;margin-top:8px">${R.map(([l,v,goal,u,col])=>`<div aria-label="${l}: ${Math.round(v)} of ${goal||'—'} ${u}">${ring(v,goal,col)}<div style="font-size:12px;font-weight:700;margin-top:2px">${l}</div><div class="muted small">${Math.round(v*10)/10}${goal?'/'+goal:''} ${u}</div></div>`).join('')}</div>
+  <p class="hint" style="margin:10px 0 0">${fast?`⏳ Fasting ${Math.floor((Date.now()-new Date(fast.start))/36e5)}h of ${fast.goal}h`:''}${fast&&next?' · ':''}${next}${!fast&&!next?'Meals, fasting and macros are in <b>Meals</b>. Workouts are in <b>Training</b>.':''}</p></div>`;
+}
 function renderFitness(){
  const f=fit();if(!sel||!f.people.some(p=>p.id===sel))sel=f.people[0].id;
  const P=f.people.find(p=>p.id===sel),S=stats(P.id),g=P.goals,W=Math.max(280,(section.clientWidth||360)-36),today=day();
@@ -129,15 +145,13 @@ function renderFitness(){
  // meal plan week (Sun-Sat), this or next
  const ws=pd(today);ws.setDate(ws.getDate()-ws.getDay()+7*planWeek);const wk=[...Array(7)].map((_,i)=>{const d=new Date(ws);d.setDate(d.getDate()+i);return day(d);});
  const fam=f.people.map(p=>({p,s:stats(p.id)}));const famMax=Math.max(1,...fam.map(x=>Math.max(x.s.minutes7,x.p.goals.activeMin||0)));
- section.innerHTML=`
+ section.innerHTML=ringsHtml(P,S)+`
  <div class="panel"><div class="ft-chips">${f.people.map(p=>`<button class="ft-chip${p.id===sel?' on':''}" data-ft="who" data-id="${p.id}">${esc(p.name)}</button>`).join('')}<button class="ft-chip" data-ft="addp">+ Person</button></div>
   <div class="ft-meters">
    ${meter('Active minutes · last 7 days',S.minutes7,'min',g.activeMin,`<div class="l" style="margin-top:6px">${S.streak?`🔥 ${S.streak}-day streak`:'No streak yet'} · ${S.workouts7} workout${S.workouts7===1?'':'s'}</div>`)}
    ${meter('Steps today',S.stepsToday,'steps',g.steps)}
    ${meter('Water today',S.waterToday,'glasses',g.water,`<div class="acts"><button class="btn alt sm" data-ft="water" data-v="-1" aria-label="Remove a glass">−</button><button class="btn sm" data-ft="water" data-v="1">+ 1 glass</button></div>`)}
    ${meter('Sleep last logged',S.sleepLast,'h',g.sleep,S.sleepAvg!=null?`<div class="l" style="margin-top:6px">7-day avg ${S.sleepAvg.toFixed(1)} h</div>`:'')}
-   ${meter('Calories today',S.calToday,'cal',g.calories)}
-   ${meter('Protein today',S.proteinToday,'g',g.protein)}
   </div>
   <div class="actions" style="margin-top:12px"><button class="btn alt sm" data-ft="goals">${showGoals?'Close goals':'Goals & name'}</button></div>
   ${showGoals?`<div class="two"><div><label>Name</label><input id="gName" value="${esc(P.name)}" maxlength="30"></div><div><label>Active min / week</label><input id="gAct" inputmode="numeric" value="${g.activeMin??''}"></div></div>
@@ -151,9 +165,6 @@ function renderFitness(){
  <div class="panel" style="position:relative"><h2>${esc(P.name)}’s activity</h2><p class="hint" style="margin:0 0 6px">Active minutes per day${g.activeMin?' · goal line = '+Math.round(g.activeMin/7)+' min/day':''}</p>${weekBars(S.days,W,g.activeMin?Math.round(g.activeMin/7):0)}</div>
  <div class="panel" style="position:relative"><h2>Weight</h2>${S.weights.length>=2?`<p class="hint" style="margin:0 0 6px">${S.latestW.value} lb now${wDelta!=null?` · <span style="color:${wDelta<=0?C.goodText:C.ink2}">${wDelta>0?'+':''}${wDelta.toFixed(1)} lb</span> vs 30 days ago`:''}${g.weight?` · goal ${g.weight} lb`:''}</p>${weightChart(S.weights,g.weight,W)}`:`<div class="empty">${S.weights.length?'One weigh-in so far ('+S.weights[0].value+' lb). Log another to see a trend.':'Log a weigh-in to see the trend.'}</div>`}</div>
  ${f.people.length>1?`<div class="panel"><h2>Family this week</h2><p class="hint" style="margin:0 0 6px">Active minutes, last 7 days · tick = each person’s goal</p>${fam.map(x=>`<div style="padding:7px 0"><div style="display:flex;justify-content:space-between;font-size:13px"><span>${esc(x.p.name)}${x.s.streak>1?` <span style="color:${C.ink3}">🔥${x.s.streak}</span>`:''}</span><span style="font-variant-numeric:tabular-nums">${x.s.minutes7} min</span></div><div class="dz-track" style="position:relative;height:8px;margin-top:5px"><i style="position:absolute;left:0;top:0;height:8px;border-radius:0 4px 4px 0;background:${C.s1};width:${x.s.minutes7/famMax*100}%"></i>${x.p.goals.activeMin?`<u style="position:absolute;top:-3px;width:2px;height:14px;background:${C.ink2};left:${x.p.goals.activeMin/famMax*100}%"></u>`:''}</div></div>`).join('')}</div>`:''}
- <div class="panel"><div class="header"><h2>Meal plan</h2><div class="actions"><button class="btn alt sm" data-ft="plan" data-v="0"${planWeek===0?' disabled':''}>This week</button><button class="btn alt sm" data-ft="plan" data-v="1"${planWeek===1?' disabled':''}>Next week</button></div></div>
-  <table class="ft-plan"><thead><tr><th></th><th>Breakfast</th><th>Lunch</th><th>Dinner</th></tr></thead><tbody>${wk.map(d=>`<tr><td class="d">${pd(d).toLocaleDateString(undefined,{weekday:'short'})}<div style="font-weight:500;color:${C.ink3};font-size:10.5px">${pd(d).getDate()}</div></td>${['breakfast','lunch','dinner'].map(s=>`<td class="${d===today?'today':''}" data-ft="meal" data-d="${d}" data-s="${s}">${esc((f.mealPlan[d]||{})[s]||'')}</td>`).join('')}</tr>`).join('')}</tbody></table>
-  <p class="hint">Tap a slot to plan a meal. With Vector AI on, try “Vector, plan healthy dinners for next week”.</p></div>
  <div class="panel"><h2>Recent · ${esc(P.name)}</h2>${recent.length?recent.map(l=>`<div class="ft-row"><div class="g">${esc(describe(l))}<div class="s">${short(l.date)}</div></div><button class="x" data-ft="del" data-id="${l.id}" aria-label="Delete">✕</button></div>`).join(''):'<div class="empty">Nothing logged yet.</div>'}</div>`;
  // tooltips for chart marks
  section.querySelectorAll('[data-tip]').forEach(el=>{const card=el.closest('.panel');const show=()=>{let t=card.querySelector('.ft-tip');if(!t){t=document.createElement('div');t.className='ft-tip';card.appendChild(t);}t.textContent=el.dataset.tip;t.style.opacity=1;const r=el.getBoundingClientRect(),cr=card.getBoundingClientRect();t.style.left=Math.max(6,Math.min(cr.width-t.offsetWidth-6,r.left-cr.left+r.width/2-t.offsetWidth/2))+'px';t.style.top=(r.top-cr.top-t.offsetHeight-6)+'px';};

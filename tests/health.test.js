@@ -29,7 +29,7 @@ module.exports = {
     assert.match((await app.cmd('add milk, eggs and 2 lb chicken to the grocery list')).join(), /Grocery list: milk, eggs, 2 lb chicken/);
     assert.match((await app.cmd('we need to call mom')).join(), /Unrecognized/, 'not groceries');
     await app.cmd('add milk, eggs and 2 lb chicken to the grocery list', true);
-    await app.tab('fitness');
+    await app.tab('meals');
     await app.page.click('#gr-panel [data-gr="plan"][data-v="0"]'); await app.page.waitForTimeout(200);
     const items = (await app.data()).grocery.items.map(i => i.name + '/' + i.aisle);
     for (const want of ['Milk/Dairy & Eggs', 'Chicken/Meat & Seafood', 'Salmon/Meat & Seafood', 'Broccoli/Produce', 'Rice/Pantry']) assert.ok(items.includes(want), 'missing ' + want + ' in ' + items);

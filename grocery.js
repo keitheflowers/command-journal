@@ -29,7 +29,7 @@ function add(items,source='manual'){
 }
 // Split spoken/typed lists: "milk, eggs and 2 pounds of chicken"
 function splitList(text){return String(text).split(/\s*(?:,|;|\band\b|\bplus\b|&)\s*/i).map(s=>s.trim()).filter(Boolean).map(s=>{const m=s.match(/^((?:\d+(?:\.\d+)?|a|an|one|two|three|four|five|six|a dozen|a couple(?: of)?)\s*(?:lbs?|pounds?|oz|ounces?|gallons?|cans?|bags?|boxes?|packs?|bunch(?:es)?|dozen|loaf|loaves|jars?|bottles?)?(?:\s+of)?)\s+(.+)$/i);return m&&/\d|dozen|lb|pound|oz|gallon|can|bag|box|pack|bunch|loa|jar|bottle|couple/i.test(m[1])?{name:m[2],qty:m[1].replace(/\s+of$/i,'')}:{name:s};});}
-function mealsFor(week){const mp=(window.Fitness&&window.Fitness.mealPlan())||{},t=new Date();const s=new Date(t);s.setDate(t.getDate()-t.getDay()+7*week);const out=[];for(let i=0;i<7;i++){const d=new Date(s);d.setDate(s.getDate()+i);const k=day(d);for(const [slot,m] of Object.entries(mp[k]||{}))if(m)out.push({date:k,slot,meal:m});}return out;}
+function mealsFor(week){if(window.Nutrition)return window.Nutrition.plannedMeals(week);const mp=(window.Fitness&&window.Fitness.mealPlan())||{},t=new Date();const s=new Date(t);s.setDate(t.getDate()-t.getDay()+7*week);const out=[];for(let i=0;i<7;i++){const d=new Date(s);d.setDate(s.getDate()+i);const k=day(d);for(const [slot,m] of Object.entries(mp[k]||{}))if(m)out.push({date:k,slot,meal:m});}return out;}
 async function fromPlan(week){
  const meals=mealsFor(week);if(!meals.length){toast('No meals planned for that week yet.');return;}
  if(window.VectorAI&&window.VectorAI.enabled()&&navigator.onLine!==false){
@@ -42,7 +42,7 @@ async function fromPlan(week){
  const parts=[];for(const m of meals)for(const p of m.meal.split(/\s*(?:,|&|\band\b|\bwith\b|\bw\/)\s*/i))if(p.trim().length>1)parts.push({name:p.trim()});
  const n=add(parts,'meal');persist();toast(`Added ${n} item${n===1?'':'s'} from your meal plan. Turn on Vector AI for full ingredient lists.`);
 }
-window.Grocery={AISLES,items:()=>g().items,add,splitList};
+window.Grocery={AISLES,items:()=>g().items,add,splitList,inject:()=>inject()};
 
 // ---- panel ------------------------------------------------------------
 let week=0,showDone=true;
@@ -62,9 +62,9 @@ function panelHtml(){
   <p class="hint" style="margin-top:10px">Hands-free: “Vector, open Family Save, add milk and eggs to the grocery list”. With Vector AI on: “make a grocery list for next week’s meals” or “what’s on the grocery list?”</p></div>`;
 }
 function inject(){
- const sec=document.getElementById('fitness');if(!sec)return;
+ const sec=document.getElementById('meals')||document.getElementById('fitness');if(!sec||sec.classList.contains('hidden'))return;
  const old=sec.querySelector('#gr-panel');if(old)old.remove();
- const plan=[...sec.querySelectorAll('.panel')].find(p=>/^Meal plan/.test(p.querySelector('h2')?.textContent||''));
+ const plan=sec.querySelector('#nu-plan')||[...sec.querySelectorAll('.panel')].find(p=>/^Meal plan/.test(p.querySelector('h2')?.textContent||''));
  (plan||sec.lastElementChild)?.insertAdjacentHTML('afterend',panelHtml());
 }
 document.addEventListener('click',e=>{
@@ -79,5 +79,5 @@ document.addEventListener('click',e=>{
 });
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='grIn'){e.preventDefault();document.querySelector('#gr-panel [data-gr="add"]').click();}});
 const baseRender=window.render;
-window.render=function(){baseRender.apply(this,arguments);if(view==='fitness')inject();};
+window.render=function(){baseRender.apply(this,arguments);if(view==='meals')inject();};
 })();

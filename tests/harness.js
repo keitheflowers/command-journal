@@ -85,7 +85,7 @@ async function open(opts = {}) {
         return items.length ? items : [box.textContent];
       }, { text, confirm });
     },
-    tab: async v => { await page.click(`#tabs [data-view="${v}"]`); await page.waitForTimeout(150); },
+    tab: async v => { await page.evaluate(v => openView(v), v); await page.waitForTimeout(150); },
     say: async (t, ms = 300) => { await page.evaluate(t => window.__final(t), t); await page.waitForTimeout(ms); },
     lastSaid: () => page.evaluate(() => window.__said.at(-1)),
     data: () => page.evaluate(() => JSON.parse(JSON.stringify(data))),

@@ -197,7 +197,10 @@ const css=document.createElement('style');css.textContent=`
 .st-plan{padding:11px 0;border-bottom:1px solid ${C.grid}}.st-plan:last-child{border:0}.st-plan .t{display:flex;gap:8px;align-items:center}.st-plan .t b{flex:1;font-size:15px}.st-plan .x2{font-size:12px;color:${C.ink3};margin-top:4px;line-height:1.5}
 .st-days{display:flex;gap:6px;margin-top:8px}.st-days button{width:36px;height:36px;border-radius:50%;border:1px solid #24394f;background:#0e1624;color:${C.ink2};font-weight:700}.st-days button.on{background:#0f3149;border-color:#46d9f5;color:#fff}
 .st-prev{margin-top:10px;font-size:12.5px}.st-prev .e{padding:6px 0;border-bottom:1px solid ${C.grid}}.st-prev .e:last-child{border:0}
-.st-set{display:grid;grid-template-columns:34px 1fr 1fr 74px;gap:6px;align-items:center;margin-top:6px}.st-set input{padding:9px 8px;text-align:center}.st-set .p{font-size:11px;color:${C.ink3};text-align:center}.st-set .i{font-size:12px;color:${C.ink3}}
+.st-set{display:grid;grid-template-columns:28px 1fr 1fr 58px 40px;gap:6px;align-items:center;margin-top:6px}.st-set input{padding:9px 8px;text-align:center}.st-set .p{font-size:11px;color:${C.ink3};text-align:center}.st-set .i{font-size:12px;color:${C.ink3}}
+.st-done{height:38px;border-radius:10px;border:1px solid #2b4a63;background:#0b131f;color:#fff;font-size:18px;font-weight:800}.st-done.on{background:#1f6b52;border-color:#3fd16b}
+.st-plates{font-size:11px;color:#7f93a8;margin:2px 0 0 34px}
+#restBar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom));z-index:30;background:linear-gradient(135deg,#0f3149,#14304a);border:1px solid #46d9f5;border-radius:16px;padding:10px 12px;display:flex;align-items:center;gap:10px;box-shadow:0 10px 30px #0008;color:#fff;width:min(94vw,420px)}#restBar[hidden]{display:none}#restBar .t{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums;flex:1}#restBar button{border:1px solid #2b4a63;background:#0b131f;color:#fff;border-radius:10px;padding:7px 10px;font-weight:700}
 .st-block{padding:10px 0;border-bottom:1px solid ${C.grid}}.st-block:last-child{border:0}.st-block h3{margin:0;font-size:14.5px;display:flex;justify-content:space-between}
 .st-res{padding:10px 0;border-bottom:1px solid ${C.grid}}.st-res:last-child{border:0}.st-res .h{display:flex;gap:8px;align-items:center}.st-res .h b{flex:1}.st-res .m{font-size:12px;color:${C.ink2};margin-top:4px;line-height:1.5}
 .st-bars .r{padding:6px 0}.st-bars .top{display:flex;justify-content:space-between;font-size:13px}.st-bars .tr{position:relative;height:8px;margin-top:5px;background:#14263a;border-radius:4px}.st-bars .tr i{position:absolute;left:0;top:0;height:8px;border-radius:4px;background:${C.s1}}.st-bars .tr u{position:absolute;top:-3px;width:2px;height:14px;background:${C.ink2}}`;
@@ -267,12 +270,26 @@ function planEditor(pid){
   <div class="st-prev" id="stPrev">${parsed.length?parsed.map(e=>`<div class="e"><b>${esc(e.name)}</b> · ${e.sets.length} set${e.sets.length===1?'':'s'}: ${fmtSets(e.sets)}</div>`).join(''):'<span class="hint">Preview appears as you type.</span>'}</div>
   <div class="actions" style="margin-top:12px"><button class="btn" data-st="saveplan">Save plan</button><button class="btn alt" data-st="cancel">Cancel</button></div></div>`;
 }
+const isBarbell=n=>{const k=String(n).toLowerCase();return !/(dumbbell|\bdb\b|cable|machine|smith|kettlebell|band|ez)/.test(k)&&/(bench|squat|deadlift|overhead press|military|barbell|row|close grip|shrug|hip thrust|rdl|romanian|good morning)/.test(k);};
+// plates per side for a 45 lb bar
+function plates(w,bar=45){let side=(w-bar)/2;if(side<=0)return 'just the bar';const out=[];for(const p of [45,35,25,10,5,2.5]){while(side>=p-1e-9){out.push(p);side-=p;}}return 'per side: '+out.join(' + ')+(side>0.01?` (+${side.toFixed(1)} short)`:'');}
+// rest timer: starts when a set is ticked, buzzes at zero
+const restBar=document.createElement('div');restBar.id='restBar';restBar.hidden=true;restBar.setAttribute('role','timer');document.body.appendChild(restBar);
+let restEnd=0,restIv=null;
+function restFor(reps){return reps<=6?150:reps<=10?90:60;}
+function startRest(sec){restEnd=Date.now()+sec*1000;restBar.hidden=false;clearInterval(restIv);drawRest();restIv=setInterval(drawRest,250);}
+function stopRest(){clearInterval(restIv);restBar.hidden=true;restEnd=0;}
+function drawRest(){const left=Math.max(0,Math.round((restEnd-Date.now())/1000));
+ restBar.innerHTML=`<span style="font-size:13px;color:#9fd9ec">Rest</span><span class="t">${Math.floor(left/60)}:${String(left%60).padStart(2,'0')}</span><button data-rest="-30">−30</button><button data-rest="30">+30</button><button data-rest="skip">Skip</button>`;
+ if(left<=0){stopRest();try{navigator.vibrate&&navigator.vibrate([250,120,250]);}catch(_){}toast('Rest over: next set! 💪');}}
+restBar.addEventListener('click',e=>{const b=e.target.closest('[data-rest]');if(!b)return;const v=b.dataset.rest;if(v==='skip')return stopRest();restEnd=Math.max(Date.now()+5000,restEnd+(+v)*1000);drawRest();});
+window.Strength=Object.assign(window.Strength||{},{plates,isBarbell,restFor});
 function sessionEditor(){
  const s=active;return `<div class="panel" id="st-session"><div class="header"><h2>🏋️ ${esc(s.name)}</h2><span class="muted small">${short(s.date)}</span></div>
   <p class="hint" style="margin:0 0 6px">Planned sets are filled in. Change what was different, then Finish. Or just say it: “Vector, open Family Save, I did ${esc(s.name.toLowerCase())}: ${esc(s.exercises[0]?.name.toLowerCase()||'bench')} 225 for 10, 315 for 8…”</p>
   ${s.exercises.map((e,ei)=>`<div class="st-block"><h3><span>${esc(e.name)}</span><button class="x" data-st="rmex" data-i="${ei}" aria-label="Remove exercise">✕</button></h3>
-   <div class="st-set" style="margin-top:4px"><span class="i"></span><span class="p">lb</span><span class="p">reps</span><span class="p">planned</span></div>
-   ${e.actual.map((a,si)=>`<div class="st-set"><span class="i">#${si+1}</span><input inputmode="decimal" data-st="w" data-e="${ei}" data-s="${si}" value="${a.w??''}" aria-label="Set ${si+1} weight"><input inputmode="numeric" data-st="r" data-e="${ei}" data-s="${si}" value="${a.r??''}" aria-label="Set ${si+1} reps"><span class="p">${e.planned[si]?`${e.planned[si].w??'?'}×${e.planned[si].r}`:'extra'}</span></div>`).join('')}
+   <div class="st-set" style="margin-top:4px"><span class="i"></span><span class="p">lb</span><span class="p">reps</span><span class="p">planned</span><span class="p">done</span></div>
+   ${e.actual.map((a,si)=>`<div class="st-set"><span class="i">#${si+1}</span><input inputmode="decimal" data-st="w" data-e="${ei}" data-s="${si}" value="${a.w??''}" aria-label="Set ${si+1} weight"><input inputmode="numeric" data-st="r" data-e="${ei}" data-s="${si}" value="${a.r??''}" aria-label="Set ${si+1} reps"><span class="p">${e.planned[si]?`${e.planned[si].w??'?'}×${e.planned[si].r}`:'extra'}</span><button class="st-done${a.done?' on':''}" data-st="done" data-e="${ei}" data-s="${si}" aria-label="Set ${si+1} done">${a.done?'✓':''}</button></div>${isBarbell(e.name)&&a.w>=45?`<div class="st-plates">${plates(a.w)}</div>`:''}`).join('')}
    <div class="actions" style="margin-top:8px"><button class="btn alt sm" data-st="addset" data-e="${ei}">+ Set</button>${e.actual.length?`<button class="btn alt sm" data-st="rmset" data-e="${ei}">− Set</button>`:''}</div></div>`).join('')}
   <label>Add an exercise</label><input id="stAddEx" placeholder="e.g. Tricep pushdown 60 3 sets of 12">
   <div class="two"><div><label>Duration (min, optional)</label><input id="stMin" inputmode="numeric" value="${s.minutes||''}"></div><div></div></div>
@@ -328,16 +345,17 @@ section.addEventListener('click',e=>{
  else if(a==='delplan'){if(!confirm('Delete this plan? Logged workouts stay.'))return;f.plans=f.plans.filter(p=>p.id!==b.dataset.id);}
  else if(a==='start'){startSession(f.plans.find(p=>p.id===b.dataset.id));}
  else if(a==='startpick'){const id=document.getElementById('stPick').value;startSession(id?f.plans.find(p=>p.id===id):null);}
+ else if(a==='done'){const ex=active.exercises[+b.dataset.e],st=ex.actual[+b.dataset.s];st.done=!st.done;if(st.done){const more=ex.actual.some(x=>!x.done)||active.exercises.some(x=>x.actual.some(y=>!y.done));if(more)startRest(restFor(st.r||10));else{stopRest();toast('All sets done. Tap Finish & save.');}}render2();return;}
  else if(a==='addset'){const ex=active.exercises[+b.dataset.e];const last=ex.actual.at(-1)||ex.planned[ex.actual.length]||{w:null,r:null};ex.actual.push({...last});render2();return;}
  else if(a==='rmset'){active.exercises[+b.dataset.e].actual.pop();render2();return;}
  else if(a==='rmex'){active.exercises.splice(+b.dataset.i,1);render2();return;}
- else if(a==='finish'){
+ else if(a==='finish'){stopRest();
   const extra=parseSets(document.getElementById('stAddEx').value);for(const x of extra)active.exercises.push({name:x.name,planned:[],actual:x.sets});
   for(const ex of active.exercises)ex.actual=ex.actual.filter(s=>s.r>0);
   if(!active.exercises.some(x=>x.actual.length)){toast('Enter at least one set.');return;}
   active.minutes=parseFloat(document.getElementById('stMin').value)||null;
   const text=saveSession(active);result={sess:active,R:analyze(active),text};active=null;toast('Workout saved.');}
- else if(a==='discard'){if(!confirm('Discard this workout?'))return;active=null;}
+ else if(a==='discard'){if(!confirm('Discard this workout?'))return;active=null;stopRest();}
  else if(a==='applynext'){const n=applyNext(result.sess.planId,result.sess);toast(`Updated ${n} exercise${n===1?'':'s'} in ${result.sess.name}.`);result=null;}
  else if(a==='closeres'){result=null;}
  else if(a==='delsess'){if(!confirm('Delete this workout?'))return;f.sessions=f.sessions.filter(s=>s.id!==b.dataset.id);}

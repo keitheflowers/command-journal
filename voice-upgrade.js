@@ -150,6 +150,15 @@ function parseBudget(part){
     return {kind:'budgetassign',to:c,amount:a.cents,month:day().slice(0,7)};}
   return null;
 }
+function parseFast(part){
+  if(!window.Nutrition||!window.Fitness)return null;let {who,text}=strengthPerson(part);text=text.replace(/^(?:i'?m|i am|am)\s+/i,'');let m;
+  if((m=text.match(/^(?:start(?:ing|ed)?|begin(?:ning)?|began)\s+(?:my\s+|a\s+|an\s+)?(?:(\d{1,2})[\s-]*(?:hour|hr|h)\s+)?fast(?:ing)?(?:\s+(?:for\s+)?(\d{1,2})\s*(?:hours?|hrs?|h))?$/i))||(m=text.match(/^fasting(?:\s+(?:for\s+)?(\d{1,2})\s*(?:hours?|hrs?|h))?$/i))){
+    if(window.Nutrition.activeFast(who.id))return {error:who.name+' is already fasting.'};
+    const g=+(m[1]||m[2]||0)||window.Nutrition.N(who.id).fastGoal||16;return {kind:'faststart',personId:who.id,who:who.name,goal:g};}
+  if(/^(?:end(?:ed)?|stop(?:ped)?|break|broke|finish(?:ed)?)\s+(?:my\s+|the\s+)?fast(?:ing)?$/i.test(text)){
+    if(!window.Nutrition.activeFast(who.id))return {error:who.name+' isn’t fasting right now.'};return {kind:'fastend',personId:who.id,who:who.name};}
+  return null;
+}
 function parseSavings(part){
   if(!window.Savings)return null;let m;
   if((m=part.match(/^(?:create|add|start|make|set up|setup|open|new)\s+(?:a\s+)?(?:new\s+)?savings?\s+goal\s+(?:for\s+|called\s+|named\s+)?(.+)$/i))){
@@ -212,6 +221,7 @@ function parse(raw){
   for(let part of parts){
     part=part.replace(/^(?:i\s+)?(?:have\s+)?(?:just\s+)?(?:please\s+)?/i,'').trim();
     if(/^(?:add|put)\s.+\s(?:to|on)\s(?:the\s|my\s|our\s)?(?:grocery|groceries|shopping)(?:\slist)?$/i.test(part)||/^we/i.test(part)){const gr=parseGrocery(part);if(gr){actions.push(gr);continue;}}
+    {const fa=parseFast(part);if(fa){if(fa.error)errors.push(fa.error);else actions.push(fa);continue;}}
     {const st=parseStrength(part);if(st){if(st.error)errors.push(st.error);else actions.push(st);continue;}}
     {const bm=parseBudget(part);if(bm){actions.push(bm);continue;}}
     {const sv=parseSavings(part);if(sv){if(sv.error)errors.push(sv.error);else actions.push(sv);continue;}}
@@ -272,7 +282,7 @@ window.interpretCommand=async function(){
   const SETS=s=>{const g=[];for(const x of s){const t=(x.w==null?'?':x.w===0?'BW':x.w)+'×'+x.r;const l=g.at(-1);if(l&&l.t===t)l.n++;else g.push({t,n:1});}return g.map(x=>x.n>1?x.t+' ×'+x.n:x.t).join(', ');};
   const DN=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const LIFT=a=>{const R=window.Strength.analyze(a.session);return a.session.name+' for '+a.who+' · '+when(a.session.date)+' — '+R.map(r=>r.actual.length?r.name+' '+SETS(r.actual)+(r.planned.length?' (plan '+SETS(r.planned)+')':'')+' '+r.verdict.i+' '+r.verdict.t+(r.delta!=null?' '+(r.delta>=0?'+':'−')+Math.abs(Math.round(r.delta*100))+'%':'')+(r.pr?' 🏆 PR':''):r.name+' skipped').join('; ');};
-  let items=actions.map(a=>a.kind==='budgetmove'?'Budget: move '+$(a.amount)+' from '+a.from+' to '+a.to:a.kind==='budgetassign'?'Budget: assign '+$(a.amount)+' to '+a.to:a.kind==='liftplan'?'Workout plan for '+a.who+': '+a.title+(a.days.length?' ('+a.days.map(d=>DN[d]).join(', ')+')':'')+' — '+a.exercises.map(e=>e.name+' '+SETS(e.sets)).join('; '):a.kind==='liftsession'?LIFT(a):a.kind==='goalnew'?'New savings goal: '+a.title+' · '+$(a.amount)+(a.date?' · by '+when(a.date):''):a.kind==='goaladd'?(a.amount>0?'Savings: +'+$(a.amount)+' → ':'Savings: −'+$(-a.amount)+' from ')+a.title+' · '+when(a.date):a.kind==='grocery'?'Grocery list: '+a.items.map(i=>(i.qty?i.qty+' ':'')+i.name).join(', '):a.kind==='fit'?'Log for '+a.who+': '+FIT(a)+' · '+when(a.date):a.kind==='mealplan'?'Meal plan: '+a.slot+' '+when(a.date)+' · '+a.note:a.kind==='txn'?(a.type==='income'?'Income: ':'Expense: ')+$(a.amount)+' · '+a.category+(a.note?' · '+a.note:'')+' · '+when(a.date):a.kind==='billpaid'?'Bill paid: '+a.title+' · '+$(a.amount)+' · '+when(a.date):a.kind==='add'?'Add: '+a.title+' · '+when(a.date)+(a.due?' · due '+when(a.due):'')+' · '+a.priority+' priority · '+a.area:a.kind==='complete'?'Complete: '+a.title:'Move to '+when(a.date)+': '+a.title);
+  let items=actions.map(a=>a.kind==='budgetmove'?'Budget: move '+$(a.amount)+' from '+a.from+' to '+a.to:a.kind==='budgetassign'?'Budget: assign '+$(a.amount)+' to '+a.to:a.kind==='liftplan'?'Workout plan for '+a.who+': '+a.title+(a.days.length?' ('+a.days.map(d=>DN[d]).join(', ')+')':'')+' — '+a.exercises.map(e=>e.name+' '+SETS(e.sets)).join('; '):a.kind==='liftsession'?LIFT(a):a.kind==='goalnew'?'New savings goal: '+a.title+' · '+$(a.amount)+(a.date?' · by '+when(a.date):''):a.kind==='goaladd'?(a.amount>0?'Savings: +'+$(a.amount)+' → ':'Savings: −'+$(-a.amount)+' from ')+a.title+' · '+when(a.date):a.kind==='grocery'?'Grocery list: '+a.items.map(i=>(i.qty?i.qty+' ':'')+i.name).join(', '):a.kind==='fit'?'Log for '+a.who+': '+FIT(a)+' · '+when(a.date):a.kind==='mealplan'?'Meal plan'+(a.personId&&window.Fitness&&window.Fitness.people().length>1?' for '+window.Fitness.person(a.personId).name:'')+': '+(a.slotName||a.slot)+' '+when(a.date)+' · '+a.note:a.kind==='faststart'?'Fasting: start a '+a.goal+'h fast for '+a.who:a.kind==='fastend'?'Fasting: end '+a.who+'’s fast':a.kind==='txn'?(a.type==='income'?'Income: ':'Expense: ')+$(a.amount)+' · '+a.category+(a.note?' · '+a.note:'')+' · '+when(a.date):a.kind==='billpaid'?'Bill paid: '+a.title+' · '+$(a.amount)+' · '+when(a.date):a.kind==='add'?'Add: '+a.title+' · '+when(a.date)+(a.due?' · due '+when(a.due):'')+' · '+a.priority+' priority · '+a.area:a.kind==='complete'?'Complete: '+a.title:'Move to '+when(a.date)+': '+a.title);
   box.innerHTML=(typeof aiErr!=='undefined'&&aiErr?'<p class="hint" style="margin:0 0 8px;color:#ff8a8a">Vector AI didn’t answer: '+esc(aiErr)+' Used the built-in rules instead.</p>':'')+(reply?'<p class="hint" style="margin:0 0 8px;color:#cdeefa">🧠 '+esc(reply)+'</p>':'')+(errors.length?'<p class="hint" style="margin:0 0 8px">Skipped: '+errors.map(esc).join('; ')+'</p>':'')+'<strong>Review '+actions.length+' proposed change(s)</strong><ol>'+items.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ol><div class="actions"><button class="btn sm" onclick="applyPreview()">Confirm all changes</button><button class="btn alt sm" onclick="cancelVoicePreview()">Cancel</button></div><p class="hint">No changes occur before confirmation.</p>';
   pending={raw,actions};
 };
@@ -292,7 +302,9 @@ window.applyPreview=function(){
     else if(a.kind==='goaladd'){window.Savings.contribute(a.id,a.amount,a.date);}
     else if(a.kind==='grocery'){window.Grocery.add(a.items,'voice');}
     else if(a.kind==='fit'){window.Fitness.add({personId:a.personId,date:a.date,kind:a.fkind,activity:a.activity,minutes:a.minutes,miles:a.miles,value:a.value,note:a.note,calories:a.calories,protein:a.protein});}
-    else if(a.kind==='mealplan'){window.Fitness.setMeal(a.date,a.slot,a.note);}
+    else if(a.kind==='mealplan'){window.Fitness.setMeal(a.date,a.slot,a.note,a.personId);}
+    else if(a.kind==='faststart'){window.Nutrition.startFast(a.personId,a.goal);}
+    else if(a.kind==='fastend'){window.Nutrition.endFast(a.personId);}
     else if(a.kind==='txn'){window.Finance.addTxn({type:a.type,amount:a.amount,category:a.category,note:a.note,date:a.date});}
     else if(a.kind==='billpaid'){window.Finance.markBillPaid(a.id,a.date,a.amount);}
     else if(a.kind==='complete'){let t=data.tasks.find(t=>t.id===a.id);t.status='done';t.completed=stamp();log('task_completed',t.id,t.title);}

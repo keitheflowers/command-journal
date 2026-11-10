@@ -23,8 +23,9 @@ Rules:
 - Amounts are dollars as numbers (e.g. 45.5). Pick category and area only from the allowed lists.
 - Keep task titles short and in the user's words, without dates or priority words.
 - "reply" is read aloud: one or two short, plain sentences. If you proposed changes, reply can be empty. If the user asked a question (what's due, how much did I spend), answer it from the context in "reply" and propose no actions.
-- Fitness: use kind "fitness" with person (a name from PEOPLE; null means the first person, the phone's owner), fit_type, and the matching fields: workout -> activity + minutes and/or miles; weight -> value in lb; steps -> value; water -> value in glasses; sleep -> value in hours; meal -> note (what was eaten) + calories and/or protein grams if the user said them. Never estimate calories the user didn't give.
-- Meal planning: use kind "meal_plan" with date, meal_slot and note (the meal, short). When asked to plan meals, propose one action per slot asked for, family-friendly and varied, and consider each person's calorie/protein goals if set. Keep it general healthy eating, not medical advice.
+- Fitness: use kind "fitness" with person (a name from PEOPLE; null means the first person, the phone's owner), fit_type, and the matching fields: workout -> activity + minutes and/or miles; weight -> value in lb; steps -> value; water -> value in glasses; sleep -> value in hours; meal -> note (what was eaten) + calories, protein, carbs and fat grams if the user said them. Never estimate nutrition the user didn't give, except when the request starts with ESTIMATE REQUEST: then give realistic estimates for all four.
+- Fasting: "fast_start" (person, value = goal hours or null for their usual goal) and "fast_end" (person). Questions about fasting are answered from PEOPLE[].fasting.
+- Meal planning: use kind "meal_plan" with person, date, meal_slot (a slot id from that person's PEOPLE[].meal_slots, e.g. "s2") and note (the meal, short). Follow each person's eating pattern (e.g. 6 small meals, or one meal a day). When asked to plan meals, propose one action per slot asked for, family-friendly and varied, and consider each person's calorie/protein goals if set. Keep it general healthy eating, not medical advice.
 - Savings goals: "goal_create" with title (goal name), amount (target dollars) and date (deadline or null). "goal_contribution" with goal_id from SAVINGS_GOALS, amount in dollars (positive to add money, negative to withdraw) and date. Never withdraw more than a goal has saved.
 - Grocery list: "grocery_add", one action per item, with title (item name, short), note (quantity like "2 lb" or null) and aisle. When building a list from meals, combine duplicates and skip pantry basics unless asked.
 - Strength training: "lift_plan" creates a workout plan: title (e.g. "Chest day"), person, weekdays (0=Sun..6=Sat, or null) and exercises [{name, sets:[{weight, reps}]}], one entry per set in the order given (expand "3 sets of 12 at 80" into three sets). "lift_session" logs what was actually lifted: title = the plan name from STRENGTH_PLANS if it matches (else a short name), person, date, minutes if said, and exercises with the actual sets. Bodyweight exercises use weight 0. Use the plan's exercise names when the user clearly means them. Never invent sets that weren't said.
@@ -36,9 +37,9 @@ function schema(){
  return {type:'object',additionalProperties:false,required:['actions','reply'],properties:{
   reply:{type:'string'},
   actions:{type:'array',items:{type:'object',additionalProperties:false,
-   required:['kind','title','task_id','date','due','priority','area','money_type','amount','category','note','bill_id','person','fit_type','activity','minutes','miles','value','calories','protein','meal_slot','goal_id','aisle','weekdays','exercises'],
+   required:['kind','title','task_id','date','due','priority','area','money_type','amount','category','note','bill_id','person','fit_type','activity','minutes','miles','value','calories','protein','meal_slot','carbs','fat','goal_id','aisle','weekdays','exercises'],
    properties:{
-    kind:{type:'string',enum:['add_task','complete_task','move_task','txn','bill_paid','fitness','meal_plan','goal_create','goal_contribution','grocery_add','lift_plan','lift_session']},
+    kind:{type:'string',enum:['add_task','complete_task','move_task','txn','bill_paid','fitness','meal_plan','fast_start','fast_end','goal_create','goal_contribution','grocery_add','lift_plan','lift_session']},
     title:nul('string'),task_id:nul('string'),date:nul('string'),due:nul('string'),
     priority:{anyOf:[{type:'string',enum:['High','Medium','Low']},{type:'null'}]},
     area:{anyOf:[{type:'string',enum:AREAS},{type:'null'}]},
@@ -49,7 +50,7 @@ function schema(){
     person:nul('string'),fit_type:{anyOf:[{type:'string',enum:['workout','weight','steps','water','sleep','meal']},{type:'null'}]},
     activity:{anyOf:[{type:'string',enum:['run','walk','bike','swim','strength','yoga','hike','sports','other']},{type:'null'}]},
     minutes:nul('number'),miles:nul('number'),value:nul('number'),calories:nul('number'),protein:nul('number'),
-    meal_slot:{anyOf:[{type:'string',enum:['breakfast','lunch','dinner','snack']},{type:'null'}]},
+    meal_slot:nul('string'),carbs:nul('number'),fat:nul('number'),
     weekdays:{anyOf:[{type:'array',items:{type:'integer',enum:[0,1,2,3,4,5,6]}},{type:'null'}]},
     exercises:{anyOf:[{type:'array',items:{type:'object',additionalProperties:false,required:['name','sets'],properties:{name:{type:'string'},sets:{type:'array',items:{type:'object',additionalProperties:false,required:['weight','reps'],properties:{weight:nul('number'),reps:{type:'number'}}}}}}},{type:'null'}]},
     goal_id:nul('string'),aisle:{anyOf:[{type:'string',enum:window.Grocery?window.Grocery.AISLES:['Other']},{type:'null'}]}}}}}};
@@ -70,7 +71,7 @@ function context(){
   ctx.ACCOUNTS=window.Budget.accounts().filter(a=>!a.closed).map(a=>({name:a.name,type:a.type,balance:$(window.Budget.balance(a))}));ctx.NET_WORTH=$(window.Budget.netWorth());}
  if(window.Grocery)ctx.GROCERY_LIST=window.Grocery.items().map(i=>({name:i.name,qty:i.qty||null,aisle:i.aisle,checked:i.checked}));
  if(window.Fitness){
-  ctx.PEOPLE=window.Fitness.people().map(p=>{const s=window.Fitness.stats(p.id);return {name:p.name,goals:p.goals,active_min_last_7_days:s.minutes7,workout_streak_days:s.streak,steps_today:s.stepsToday,water_today:s.waterToday,last_sleep_h:s.sleepLast,latest_weight_lb:s.latestW?+s.latestW.value:null,calories_today:s.calToday,protein_today:s.proteinToday};});
+  ctx.PEOPLE=window.Fitness.people().map(p=>{const s=window.Fitness.stats(p.id),Nu=window.Nutrition,nt=Nu?Nu.N(p.id):null,fa=Nu?Nu.activeFast(p.id):null,tt=Nu?Nu.totals(Nu.mealsOn(p.id,today)):null;return {eating_pattern:nt?nt.pattern:null,meal_slots:nt?nt.slots.map(x=>({id:x.id,name:x.name})):null,macro_targets:nt?nt.targets:null,eaten_today:tt,fasting:fa?{active:true,hours_so_far:Math.round((Date.now()-new Date(fa.start))/36e5*10)/10,goal_hours:fa.goal}:{active:false,usual_goal_hours:nt?nt.fastGoal:null},name:p.name,goals:p.goals,active_min_last_7_days:s.minutes7,workout_streak_days:s.streak,steps_today:s.stepsToday,water_today:s.waterToday,last_sleep_h:s.sleepLast,latest_weight_lb:s.latestW?+s.latestW.value:null,calories_today:s.calToday,protein_today:s.proteinToday};});
   const mp=window.Fitness.mealPlan(),plan={};for(let i=-1;i<14;i++){const d=plusDays(today,i);if(mp[d])plan[d]=mp[d];}ctx.MEAL_PLAN_NEXT_2_WEEKS=plan;
  }
  return ctx;
@@ -111,7 +112,7 @@ function toActions(out){
    const P=window.Fitness.person(a.person)||(a.person?null:window.Fitness.person());if(!P){errors.push('No family member named “'+a.person+'” in Fitness.');continue;}
    const k=a.fit_type,pos=v=>Number(v)>0?Number(v):null,base={kind:'fit',personId:P.id,who:P.name,date:isDate(a.date)?a.date:day(),fkind:k};
    if(k==='workout'){const minutes=pos(a.minutes),miles=pos(a.miles);if(!minutes&&!miles){errors.push('A workout had no minutes or distance.');continue;}actions.push({...base,activity:window.Fitness.ACT[a.activity]?a.activity:'other',minutes:minutes&&Math.round(minutes),miles,note:a.note?String(a.note).slice(0,80):null});}
-   else if(k==='meal'){if(!a.note&&!pos(a.calories)){errors.push('A meal had no description.');continue;}actions.push({...base,note:String(a.note||'Meal').slice(0,80),calories:pos(a.calories)&&Math.round(a.calories),protein:pos(a.protein)&&Math.round(a.protein)});}
+   else if(k==='meal'){if(!a.note&&!pos(a.calories)){errors.push('A meal had no description.');continue;}actions.push({...base,note:String(a.note||'Meal').slice(0,80),calories:pos(a.calories)&&Math.round(a.calories),protein:pos(a.protein)&&Math.round(a.protein),carbs:pos(a.carbs)&&Math.round(a.carbs),fat:pos(a.fat)&&Math.round(a.fat)});}
    else if(['weight','steps','water','sleep'].includes(k)){const v=pos(a.value);if(!v){errors.push('A '+k+' entry had no number.');continue;}actions.push({...base,value:k==='steps'||k==='water'?Math.round(v):Math.round(v*10)/10});}
    else errors.push('Unknown fitness entry.');
   }else if(a.kind==='goal_create'&&window.Savings){
@@ -131,9 +132,15 @@ function toActions(out){
   }else if(a.kind==='grocery_add'&&window.Grocery){
    const name=String(a.title||'').trim();if(!name)continue;const it={name,qty:a.note?String(a.note).slice(0,30):'',aisle:a.aisle};
    const prev=actions.find(x=>x.kind==='grocery');if(prev)prev.items.push(it);else actions.push({kind:'grocery',items:[it]});
+  }else if((a.kind==='fast_start'||a.kind==='fast_end')&&window.Nutrition&&window.Fitness){
+   const P=window.Fitness.person(a.person)||(a.person?null:window.Fitness.person());if(!P){errors.push('No family member named “'+a.person+'”.');continue;}
+   if(a.kind==='fast_start')actions.push({kind:'faststart',personId:P.id,who:P.name,goal:Number(a.value)>0&&Number(a.value)<=72?Math.round(a.value):window.Nutrition.N(P.id).fastGoal||16});
+   else{if(!window.Nutrition.activeFast(P.id)){errors.push(P.name+' isn’t fasting right now.');continue;}actions.push({kind:'fastend',personId:P.id,who:P.name});}
   }else if(a.kind==='meal_plan'&&window.Fitness){
-   if(!isDate(a.date)||!window.Fitness.SLOTS.includes(a.meal_slot)||!a.note){errors.push('A meal plan entry was incomplete.');continue;}
-   actions.push({kind:'mealplan',date:a.date,slot:a.meal_slot,note:String(a.note).slice(0,120)});
+   const P=window.Fitness.person(a.person)||window.Fitness.person(),slots=window.Nutrition?window.Nutrition.N(P.id).slots:[{id:'s1',name:'Meal'}];
+   const sl=slots.find(x=>x.id===a.meal_slot)||slots.find(x=>x.name.toLowerCase()===String(a.meal_slot||'').toLowerCase());
+   if(!isDate(a.date)||!sl||!a.note){errors.push('A meal plan entry was incomplete.');continue;}
+   actions.push({kind:'mealplan',personId:P.id,date:a.date,slot:sl.id,slotName:sl.name,note:String(a.note).slice(0,120)});
   }else if(a.kind==='bill_paid'&&F){
    const b=F.summary(day().slice(0,7)).bills.find(x=>x.id===a.bill_id);if(!b){errors.push('Could not find that bill.');continue;}
    const cents=Math.round(Number(a.amount)*100);
