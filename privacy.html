@@ -4,21 +4,23 @@
 <body><main>
 <p><a href="./">← Back to the app</a></p>
 <h1>Privacy</h1><p>Last updated: November 2026</p>
-<p class="note">Plain-language summary: <b>your data stays on your phone.</b> Nothing is sent anywhere unless you turn on a feature that needs it. Each one is listed below.</p>
+<p class="note">Plain-language summary: <b>your data stays on your phone</b> unless you sign in to share it with your family. Nothing is sent anywhere unless you turn on a feature that needs it. Each one is listed below.</p>
 
 <h2>What the app stores</h2>
-<p>Tasks, calendar items, money (transactions, budgets, accounts, bills, savings goals), fitness, meals, fasting and workout data you enter. It is stored only in your browser’s storage on this device, plus daily restore points in the same browser. We (the app’s makers) do not receive, see or store this data.</p>
+<p>Tasks, calendar items, money (transactions, budgets, accounts, bills, savings goals), fitness, meals, fasting and workout data you enter. It is stored in your browser’s storage on this device, plus daily restore points in the same browser. If you don’t use Family sync, we (the app’s makers) don’t receive, see or store this data.</p>
 
 <h2>What leaves your phone, and only if you use it</h2>
 <ul>
 <li><b>Voice commands:</b> your phone’s browser (for example Chrome) turns speech into text using its own speech service, which may process audio on Google’s servers under Google’s privacy policy. Don’t say account numbers or other sensitive details out loud.</li>
 <li><b>Vector AI (off by default):</b> when you turn it on with your own Anthropic API key, the words of your request, plus summaries of your open tasks, bills, budget, accounts, savings goals, grocery list and family fitness/meal data needed to answer, are sent to Anthropic to generate a response, under Anthropic’s terms and privacy policy. Your key is stored only on this device and is never included in backups.</li>
+<li><b>Family sync (off until you sign in):</b> when you create an account and start or join a family, your email address and the app data listed above are stored on the app’s sync server (Supabase), so everyone in your family sees the same tasks, money, grocery list, meals and training. It is sent encrypted (HTTPS). Database rules let only members of your family read or change it. Anyone with your family’s invite code can join, so share it only with family, and make a new code if it gets out. Signing out leaves a copy on the phone.</li>
+<li><b>Vector AI through your family account:</b> if you turn this on, your request and the summaries described above go through the app’s server to Anthropic. The server checks you’re signed in, counts requests for a daily limit, and doesn’t keep your request.</li>
 <li><b>Food search:</b> searching USDA foods sends your search words to the U.S. Department of Agriculture’s FoodData Central API.</li>
 <li><b>Backups you share:</b> when you tap “Back up now”, a backup file goes wherever you choose (Google Drive, email, and so on). That copy is then governed by that service.</li>
 </ul>
 
 <h2>What we don’t do</h2>
-<ul><li>No advertising, no ad trackers, no selling or sharing of your data.</li><li>No analytics or crash reporting is built in.</li><li>No account is required.</li></ul>
+<ul><li>No advertising, no ad trackers, no selling or sharing of your data.</li><li>No analytics or crash reporting is built in.</li><li>No account is required. Accounts are only for Family sync.</li><li>To delete your account and your family’s synced data, email us at the address below.</li></ul>
 
 <h2>Security</h2>
 <p>You can lock the app with a PIN (stored only as a salted hash) and your phone’s fingerprint or face unlock. The lock keeps people out of the app. It does not encrypt the browser storage underneath, so keep your phone itself locked too.</p>

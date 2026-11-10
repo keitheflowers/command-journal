@@ -9,7 +9,7 @@ const MODEL='claude-opus-5-5';
 const SDK_URL='./vendor/anthropic-sdk-0.137.0.js';
 const K_KEY='vectorAiKey',K_ON='vectorAiOn',K_PLAIN='vectorAiPlain';let lastNote='';
 const store={get:k=>{try{return localStorage.getItem(k)||'';}catch(_){return '';}},set:(k,v)=>{try{v?localStorage.setItem(k,v):localStorage.removeItem(k);}catch(_){}}};
-let sdk=null,history=[];
+let sdk=null,history=[],proxied=false;
 
 const SYSTEM=`You are Vector, the assistant inside The Family Save, a family task and home-finance app.
 The user speaks or types requests. Turn each request into a list of proposed changes, and/or a short spoken reply.
@@ -77,12 +77,17 @@ function context(){
  return ctx;
 }
 async function client(){
- const key=store.get(K_KEY);if(!key)throw new Error('No API key saved.');
+ const S=window.Sync,viaServer=!!(S&&S.serverAi());
+ const key=store.get(K_KEY);if(!key&&!viaServer)throw new Error('No API key saved.');
  if(!sdk)sdk=(await import(SDK_URL)).default;
+ proxied=viaServer;
+ // Family account: the request goes to the family's server, which adds the key.
+ if(viaServer)return new sdk({apiKey:'family-save-proxy',baseURL:S.proxyUrl(),defaultHeaders:{Authorization:'Bearer '+await S.token(),apikey:S.anonKey()},dangerouslyAllowBrowser:true,maxRetries:1,timeout:45000});
  return new sdk({apiKey:key,dangerouslyAllowBrowser:true,maxRetries:1,timeout:45000});
 }
 function explain(e){
  if(!sdk)return e.message||String(e);
+ if(proxied&&e instanceof sdk.APIError&&e.error&&e.error.error&&e.error.error.message)return e.error.error.message;
  if(e instanceof sdk.AuthenticationError)return 'API key was rejected. Check it in Settings.';
  if(e instanceof sdk.PermissionDeniedError)return 'This API key is not allowed to use '+MODEL+'.';
  if(e instanceof sdk.RateLimitError)return 'Rate limited by the API. Try again in a moment.';
@@ -171,7 +176,7 @@ async function interpret(text){
  return r;
 }
 window.VectorAI={
- enabled:()=>store.get(K_ON)==='1'&&!!store.get(K_KEY),
+ enabled:()=>store.get(K_ON)==='1'&&(!!store.get(K_KEY)||!!(window.Sync&&window.Sync.serverAi())),
  interpret:async t=>{try{return await interpret(t);}catch(e){const err=new Error(explain(e));err.cause=e;throw err;}},
  reset:()=>{history=[];}
 };

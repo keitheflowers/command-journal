@@ -36,6 +36,7 @@ const task = (title, scheduled, extra = {}) => ({ id: 't' + Math.random().toStri
  *  speech: true -> fake SpeechRecognition + speechSynthesis (window.__final, window.__said)
  *  ai: function(body) -> {status, body} answering api.anthropic.com, with AI turned on
  *  local: extra localStorage entries
+ *  routes: async page => {} to mock other servers (e.g. a fake sync server)
  */
 async function open(opts = {}) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, acceptDownloads: true });
@@ -45,6 +46,7 @@ async function open(opts = {}) {
   page.on('dialog', d => d.accept(dialogs.shift() ?? ''));
   if (opts.time) await page.clock.install({ time: opts.time });
   const requests = [];
+  if (opts.routes) await opts.routes(page);
   if (opts.ai) {
     await page.route('https://api.anthropic.com/**', route => {
       const body = JSON.parse(route.request().postData() || '{}');
