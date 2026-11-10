@@ -201,9 +201,12 @@ function parse(raw){
   line=line.replace(/^(?:attest|a test|at task|add test|a task|atask)\s+/i,'add task ');
   line=line.replace(/([;,]\s*)(?:attest|a test|at task|add test|a task|atask)\s+/gi,'$1add task ');
   line=line.replace(/\b(?:and|then|also)\s+(?:attest|a test|at task|add test|a task|atask)\s+/gi,' and add task ');
-  line=line.replace(/\b(?:and|then|also)\s+(?=(?:add|create|make|schedule|complete|completed|finish|finished|mark|move|reschedule|push|spent|paid|bought|earned|received|got paid|deposited|ran|walked|jogged|biked|swam|lifted|worked out|slept|drank|weigh|weighed|ate|put|took|withdrew|transferred|moved|set aside)\b)/gi,'; ');
-  line=line.replace(/[,;]\s*(?=(?:add|create|make|schedule|complete|completed|finish|finished|mark|move|reschedule|push|spent|paid|bought|earned|received|got paid|deposited|ran|walked|jogged|biked|swam|lifted|worked out|slept|drank|weigh|weighed|ate|put|took|withdrew|transferred|moved|set aside)\b)/gi,'; ');
+  line=line.replace(/\b(?:and|then|also)\s+(?=(?:(?:i|we)\s+)?(?:add|create|make|schedule|complete|completed|finish|finished|mark|move|reschedule|push|spent|paid|bought|earned|received|got paid|deposited|ran|walked|jogged|biked|swam|lifted|worked out|slept|drank|weigh|weighed|ate|put|took|withdrew|transferred|moved|set aside)\b)/gi,'; ');
+  line=line.replace(/[,;]\s*(?=(?:(?:i|we)\s+)?(?:add|create|make|schedule|complete|completed|finish|finished|mark|move|reschedule|push|spent|paid|bought|earned|received|got paid|deposited|ran|walked|jogged|biked|swam|lifted|worked out|slept|drank|weigh|weighed|ate|put|took|withdrew|transferred|moved|set aside)\b)/gi,'; ');
   line=line.replace(/\s+(?=(?:add|create|make|schedule|complete|completed|finish|finished|mark|move|reschedule|push)\s+(?:a\s+)?(?:task\b|my\b|the\b))/gi,'; ');
+  // "...and Amanda walked 20 minutes": split before a family member's name followed by an activity
+  if(window.Fitness){const fam=window.Fitness.people().map(p=>p.name.toLowerCase().replace(/[^a-z ]/g,'').trim()).filter(Boolean).map(n=>n.replace(/\s+/g,'\\s+'));
+   if(fam.length)line=line.replace(new RegExp('\\b(?:and|then|also)\\s+(?=(?:'+fam.join('|')+')\\s+(?:ran|walked|jogged|biked|swam|lifted|worked out|did|slept|drank|weighs?|weighed|ate|plan)\\b)','gi'),'; ');}
   let parts=line.split(/\s*;\s*/).map(x=>x.trim()).filter(Boolean),actions=[],errors=[];
   if(parts.length>12)return {actions,errors:['Maximum 12 instructions per update']};
   for(let part of parts){
@@ -241,7 +244,7 @@ function parse(raw){
       }
     }else errors.push('Unrecognized instruction: '+part);
   }
-  let seen=new Set();actions=actions.filter(a=>{let key=a.kind+':'+(a.id||norm(a.title)+a.date);if(seen.has(key))return false;seen.add(key);return true;});
+  let seen=new Set();actions=actions.filter(a=>{let key=a.kind==='add'||a.kind==='complete'||a.kind==='move'?a.kind+':'+(a.id||norm(a.title)+a.date):JSON.stringify(a);/* drop exact repeats only */if(seen.has(key))return false;seen.add(key);return true;});
   return {actions,errors};
 }
 let pending=null;
@@ -270,7 +273,7 @@ window.interpretCommand=async function(){
   const DN=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const LIFT=a=>{const R=window.Strength.analyze(a.session);return a.session.name+' for '+a.who+' · '+when(a.session.date)+' — '+R.map(r=>r.actual.length?r.name+' '+SETS(r.actual)+(r.planned.length?' (plan '+SETS(r.planned)+')':'')+' '+r.verdict.i+' '+r.verdict.t+(r.delta!=null?' '+(r.delta>=0?'+':'−')+Math.abs(Math.round(r.delta*100))+'%':'')+(r.pr?' 🏆 PR':''):r.name+' skipped').join('; ');};
   let items=actions.map(a=>a.kind==='budgetmove'?'Budget: move '+$(a.amount)+' from '+a.from+' to '+a.to:a.kind==='budgetassign'?'Budget: assign '+$(a.amount)+' to '+a.to:a.kind==='liftplan'?'Workout plan for '+a.who+': '+a.title+(a.days.length?' ('+a.days.map(d=>DN[d]).join(', ')+')':'')+' — '+a.exercises.map(e=>e.name+' '+SETS(e.sets)).join('; '):a.kind==='liftsession'?LIFT(a):a.kind==='goalnew'?'New savings goal: '+a.title+' · '+$(a.amount)+(a.date?' · by '+when(a.date):''):a.kind==='goaladd'?(a.amount>0?'Savings: +'+$(a.amount)+' → ':'Savings: −'+$(-a.amount)+' from ')+a.title+' · '+when(a.date):a.kind==='grocery'?'Grocery list: '+a.items.map(i=>(i.qty?i.qty+' ':'')+i.name).join(', '):a.kind==='fit'?'Log for '+a.who+': '+FIT(a)+' · '+when(a.date):a.kind==='mealplan'?'Meal plan: '+a.slot+' '+when(a.date)+' · '+a.note:a.kind==='txn'?(a.type==='income'?'Income: ':'Expense: ')+$(a.amount)+' · '+a.category+(a.note?' · '+a.note:'')+' · '+when(a.date):a.kind==='billpaid'?'Bill paid: '+a.title+' · '+$(a.amount)+' · '+when(a.date):a.kind==='add'?'Add: '+a.title+' · '+when(a.date)+(a.due?' · due '+when(a.due):'')+' · '+a.priority+' priority · '+a.area:a.kind==='complete'?'Complete: '+a.title:'Move to '+when(a.date)+': '+a.title);
-  box.innerHTML=(reply?'<p class="hint" style="margin:0 0 8px;color:#cdeefa">🧠 '+esc(reply)+'</p>':'')+(errors.length?'<p class="hint" style="margin:0 0 8px">Skipped: '+errors.map(esc).join('; ')+'</p>':'')+'<strong>Review '+actions.length+' proposed change(s)</strong><ol>'+items.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ol><div class="actions"><button class="btn sm" onclick="applyPreview()">Confirm all changes</button><button class="btn alt sm" onclick="cancelVoicePreview()">Cancel</button></div><p class="hint">No changes occur before confirmation.</p>';
+  box.innerHTML=(typeof aiErr!=='undefined'&&aiErr?'<p class="hint" style="margin:0 0 8px;color:#ff8a8a">Vector AI didn’t answer: '+esc(aiErr)+' Used the built-in rules instead.</p>':'')+(reply?'<p class="hint" style="margin:0 0 8px;color:#cdeefa">🧠 '+esc(reply)+'</p>':'')+(errors.length?'<p class="hint" style="margin:0 0 8px">Skipped: '+errors.map(esc).join('; ')+'</p>':'')+'<strong>Review '+actions.length+' proposed change(s)</strong><ol>'+items.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ol><div class="actions"><button class="btn sm" onclick="applyPreview()">Confirm all changes</button><button class="btn alt sm" onclick="cancelVoicePreview()">Cancel</button></div><p class="hint">No changes occur before confirmation.</p>';
   pending={raw,actions};
 };
 window.cancelVoicePreview=function(){pending=null;document.getElementById('commandPreview').classList.add('hidden');};

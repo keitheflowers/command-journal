@@ -37,3 +37,13 @@ A web server is needed for service workers and reliable installability. Opening 
 
 ## Later Vector contract
 Tasks should eventually sync via an authenticated versioned API that supports unique IDs, append-only event history, per-user namespaces, explicit conflict handling, encrypted storage, and audited AI actions. Avoid embedding an AI provider in the journal's business logic.
+
+## Tests
+Browser tests cover every area: tabs, tasks and dates, calendar, hands-free voice, money (budget, accounts, CSV import, rules, splits, recurring, reports, voice), fitness, grocery, savings, strength (parser, progress, programs), backups, app lock (PIN + fingerprint) and Vector AI (mocked API).
+
+```
+npm install
+npx playwright install chromium   # first time only
+npm test                          # or: node tests/run.js money   (filter by name)
+```
+GitHub Actions runs `npm run check` and `npm test` on every push (`.github/workflows/test.yml`).
