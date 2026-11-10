@@ -203,7 +203,9 @@ function waitForTap(){
  };
  document.addEventListener('pointerup',go,true);
 }
-function autoStart(){if(autoPref()&&!armed&&!document.hidden)arm(true);}
+function autoStart(){if(window.AppLock&&window.AppLock.locked())return; // wait until unlocked
+ if(autoPref()&&!armed&&!document.hidden)arm(true);}
+document.addEventListener('app-unlocked',()=>setTimeout(autoStart,200));
 const panel=document.createElement('div');
 panel.className='panel';
 panel.innerHTML='<h2>Vector voice activation</h2><p class="hint">Say <strong>“Vector, open Family Save”</strong>, then your instruction. It reads back the change — say <strong>“confirm”</strong> or <strong>“cancel”</strong>. It keeps listening for more until you say <strong>“that’s all”</strong>. Works only while this page is open and active; Android may stop browser listening.</p><button id="wakeArm" class="btn alt" type="button">Enable hands-free</button><p id="wakeStatus" class="hint" role="status">Hands-free is off.</p>';
@@ -215,6 +217,6 @@ panel.style.marginTop='12px';
 button().addEventListener('click',toggle);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){if(armed)disarm('App left foreground.');}else autoStart();});
 window.addEventListener('pagehide',()=>{if(armed)disarm();});
-ui('Voice activation v33 loaded.'+(autoPref()?' Starting hands-free…':' Hands-free is off.'));
+ui('Voice activation v34 loaded.'+(autoPref()?' Starting hands-free…':' Hands-free is off.'));
 setTimeout(autoStart,300);
 })();
