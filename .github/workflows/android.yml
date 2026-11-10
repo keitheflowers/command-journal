@@ -1,0 +1,45 @@
+name: Android app
+# Builds the Android app (APK) from the web app. Download it from the run's
+# "Artifacts" section, copy it to the phone and open it to install.
+on:
+  push:
+    branches: [main]
+    paths: ['android-app/**', '*.js', '*.html', 'icons/**', 'vendor/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: android-app/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - name: Install Capacitor and plugins
+        working-directory: android-app
+        run: npm ci
+      - name: Add the "Hey Vector" speech model (Vosk small English, Apache-2.0)
+        run: |
+          M=android-app/android/app/src/main/assets/model-en-us
+          curl -sSL --retry 3 -o /tmp/model.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+          unzip -q /tmp/model.zip -d /tmp/model
+          mkdir -p "$M" && cp -r /tmp/model/vosk-model-small-en-us-0.15/. "$M"/
+          echo "small-en-us-0.15" > "$M/uuid"
+      - name: Build APK
+        working-directory: android-app
+        run: |
+          npm run sync
+          cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: family-save-android
+          path: android-app/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30

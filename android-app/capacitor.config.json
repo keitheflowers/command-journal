@@ -1,0 +1,9 @@
+{
+  "appId": "app.familysave",
+  "appName": "The Family Save",
+  "webDir": "www",
+  "android": { "backgroundColor": "#070a12" },
+  "plugins": {
+    "LocalNotifications": { "smallIcon": "ic_stat_vector", "iconColor": "#46d9f5" }
+  }
+}

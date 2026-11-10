@@ -217,6 +217,8 @@ panel.style.marginTop='12px';
 button().addEventListener('click',toggle);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){if(armed)disarm('App left foreground.');}else autoStart();});
 window.addEventListener('pagehide',()=>{if(armed)disarm();});
-ui('Voice activation v39 loaded.'+(autoPref()?' Starting hands-free…':' Hands-free is off.'));
+// Android app: "Hey Vector" heard while the app was closed -> ready for an instruction
+window.VectorWake={wake(){if(!armed){setAutoPref(true);arm(false);}if(!armed)return;session=true;say('Yes?');startCommandMode('');}};
+ui('Voice activation v40 loaded.'+(autoPref()?' Starting hands-free…':' Hands-free is off.'));
 setTimeout(autoStart,300);
 })();

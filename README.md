@@ -12,6 +12,7 @@ A working mobile-friendly, offline-first personal task journal prototype. No ext
 - Weekly recap: on Sunday/Monday Home shows last week's money, tasks, training (PRs), fitness and nutrition plus next week's bills and focus; say "how was my week"
 - Debt payoff (Money → Debt): APR and minimums per card/loan, avalanche vs snowball vs minimums with payoff date, total interest and savings from extra payments
 - Family accounts and cloud sync (Settings → ☁️ Family sync): email sign-in, start a family or join with an invite code, every item synced as its own record with tombstones for deletes; Vector AI can run through the family server so no phone needs an API key. Setup: see `supabase/README.md`
+- Android app (`android-app/`, built by GitHub Actions): phone speech for voice, reminders for bills/tasks/workouts/fasting, Samsung Health via Health Connect, and "Hey Vector" with the app closed (offline Vosk wake word). See `android-app/README.md`
 - First-run setup (names, family, starting balance, eating pattern, lock/backup) and plain-language Privacy and Terms pages (templates to review before commercial use)
 - Health → Training: rest timer on set completion and a plate calculator; Health → Overview: today's rings (move, protein, sleep, water), fasting and planned workout
 - Fitness (whole family): workouts, weight trend, steps, water, sleep, meals vs calorie/protein targets, and a weekly meal plan (Vector AI can fill it in)
@@ -36,7 +37,7 @@ A working mobile-friendly, offline-first personal task journal prototype. No ext
 A web server is needed for service workers and reliable installability. Opening `index.html` as `file://` may display the UI but can have storage/security restrictions and no PWA install.
 
 ## Limitations
-- Data stays on the phone unless Family sync is set up (needs your own Supabase project, see `supabase/README.md`). No Calendar access or native Android notification scheduling in the web version.
+- Data stays on the phone unless Family sync is set up (needs your own Supabase project, see `supabase/README.md`). No Calendar access, reminders, Health Connect or closed-app wake word in the web version; those come with the Android app.
 - SpeechRecognition availability and data processing depend on browser; it may require a network connection, and voice capture is not guaranteed offline.
 - The built-in interpreter understands a fixed set of phrasings (add / complete / move tasks with dates, money in/out, bills) and always asks for confirmation.
 - Optional **Vector AI** (Settings): with your own Anthropic API key, requests are sent to Claude (`claude-opus-5-5`) together with your open tasks, bills and this month's money summary, so free-form speech and questions work. The key is stored only in this browser (not in backups). Changes still require confirmation; the built-in rules are used when AI is off, offline, or fails. The official `@anthropic-ai/sdk` is vendored as a browser bundle in `vendor/`.
@@ -47,7 +48,7 @@ A web server is needed for service workers and reliable installability. Opening 
 Tasks should eventually sync via an authenticated versioned API that supports unique IDs, append-only event history, per-user namespaces, explicit conflict handling, encrypted storage, and audited AI actions. Avoid embedding an AI provider in the journal's business logic.
 
 ## Tests
-Browser tests cover every area: family sync between two phones (against a fake sync server), the AI proxy, adaptive targets, weekly recap, debt payoff, first-run setup, tabs, tasks and dates, calendar, hands-free voice, money (budget, accounts, CSV import, rules, splits, recurring, reports, voice), fitness, grocery, savings, strength (parser, progress, programs), backups, app lock (PIN + fingerprint) and Vector AI (mocked API).
+Browser tests cover every area: family sync between two phones (against a fake sync server), the AI proxy, Android extras (reminders, phone speech, Health Connect import, with a fake Capacitor), adaptive targets, weekly recap, debt payoff, first-run setup, tabs, tasks and dates, calendar, hands-free voice, money (budget, accounts, CSV import, rules, splits, recurring, reports, voice), fitness, grocery, savings, strength (parser, progress, programs), backups, app lock (PIN + fingerprint) and Vector AI (mocked API).
 
 ```
 npm install

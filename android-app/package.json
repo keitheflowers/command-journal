@@ -1,0 +1,22 @@
+{
+  "name": "family-save-android",
+  "private": true,
+  "description": "Android app for The Family Save (Capacitor shell around the web app)",
+  "scripts": {
+    "web": "node scripts/build-web.js",
+    "sync": "node scripts/build-web.js && cap sync android",
+    "apk": "npm run sync && cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor-community/speech-recognition": "7.0.1",
+    "@capacitor-community/text-to-speech": "8.0.2",
+    "@capacitor/android": "8.6.0",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.6.0",
+    "@capacitor/local-notifications": "8.3.1",
+    "@capgo/capacitor-health": "8.12.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.6.0"
+  }
+}
