@@ -81,13 +81,24 @@ function parseFitness(part){
   text=text.replace(/^(?:i|we)\s+(?:just\s+)?/i,'').replace(/^(?:log|add|record)\s+(?:a\s+)?/i,'').trim();
   const P=who||window.Fitness.person();
   let date=day(),w=parseWhen(text);if(w&&!w.due){date=w.date;text=w.text;}
-  const t=text.toLowerCase(),base={kind:'fit',personId:P.id,who:P.name,date};
+  let t=text.toLowerCase();const base={kind:'fit',personId:P.id,who:P.name,date};
+  // meals: "at 12:30 pm" = when it was eaten, "for lunch" / "for meal 2" = which meal
+  let mealTime=null,mealSlot=null;
+  if(/^(?:ate|had|eaten|eat)\b/.test(t)){
+    const tm=t.match(/\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?(?=[\s,.]|$)/);
+    if(tm){let h=+tm[1],mi=+(tm[2]||0);const ap=(tm[3]||'').replace(/\./g,'');if(ap==='pm'&&h<12)h+=12;if(ap==='am'&&h===12)h=0;if(!ap&&h<7)h+=12;if(h<24&&mi<60){mealTime=`${String(h).padStart(2,'0')}:${String(mi).padStart(2,'0')}`;t=t.replace(tm[0],' ');}}
+    const sm=t.match(/\s+(?:for|as)\s+(breakfast|lunch|dinner|supper|(?:a\s+|my\s+)?snack|(?:my\s+)?(?:first|last|second|third)\s+meal|meal\s+\d|the meal)(?=[\s,.]|$)/);
+    if(sm&&window.Nutrition){const want=sm[1].replace(/^(?:a|my)\s+/,'').replace('supper','dinner'),slots=window.Nutrition.N(P.id).slots;const num=want.match(/meal\s+(\d)/),ord={first:0,second:1,third:2}[want.split(' ')[0]];
+     const sl=slots.find(x=>x.name.toLowerCase()===want)||(num&&slots[+num[1]-1])||(ord!=null&&slots[ord])||(want.startsWith('last')&&slots[slots.length-1])||slots.find(x=>x.name.toLowerCase().includes(want));
+     if(sl){mealSlot=sl.id;t=t.replace(sm[0],' ');}}
+    t=t.replace(/\s+/g,' ').trim();
+  }
   let m;
   if((m=t.match(/^(?:weigh|weighed|weigh in at|weighed in at|weight(?: is| was)?)\s+(\d{2,3}(?:\.\d)?)/)))return {...base,fkind:'weight',value:+m[1]};
   if((m=t.match(/(\d[\d,]*)\s+steps\b/)))return {...base,fkind:'steps',value:numw(m[1])};
   if((m=t.match(/^(?:drank|had|drink)\s+(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:glass(?:es)?|cups?|bottles?)\s+of\s+water/)))return {...base,fkind:'water',value:numw(m[1])};
   if((m=t.match(/^(?:slept|got)\s+(\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s*(?:and a half\s*)?(?:hours?|hrs?)(?:\s+of\s+sleep)?/)))return {...base,fkind:'sleep',value:numw(m[1])+(/and a half/.test(t)?0.5:0)};
-  if((m=t.match(/^(?:ate|had|eaten|eat)\s+(.+?)[,\s]+(\d{2,4})\s*(?:calories|cals?|kcal)\b/))){const pr=t.match(/(\d{1,3})\s*(?:g|grams?)\s+(?:of\s+)?protein/);return {...base,fkind:'meal',note:m[1].replace(/\s+(?:for|at)\s+(?:breakfast|lunch|dinner)$/,'').replace(/^(?:a|an|some|my)\s+/,'').trim(),calories:+m[2],protein:pr?+pr[1]:null};}
+  if((m=t.match(/^(?:ate|had|eaten|eat)\s+(.+?)[,\s]+(\d{2,4})\s*(?:calories|cals?|kcal)\b/))){const pr=t.match(/(\d{1,3})\s*(?:g|grams?)\s+(?:of\s+)?protein/);return {...base,fkind:'meal',time:mealTime,slot:mealSlot,note:m[1].replace(/\s+(?:for|at)\s+(?:breakfast|lunch|dinner)$/,'').replace(/^(?:a|an|some|my)\s+/,'').trim(),calories:+m[2],protein:pr?+pr[1]:null};}
   const act=ACTS.find(([re])=>re.test(t));
   const mins=t.match(/(\d+(?:\.\d+)?|an?|one|two|half an?)\s*(hours?|hrs?|minutes?|mins?)\b/),miles=t.match(/(\d+(?:\.\d+)?)\s*(miles?|mi|km|kilometers?|k)\b/);
   if(act&&(mins||miles||/^(?:spent|did|went)/.test(t)||ACTS.some(([re])=>re.test(t.split(' ')[0])))&&(mins||miles)){
@@ -278,7 +289,7 @@ window.interpretCommand=async function(){
   if(errors.length&&!usedAI){box.innerHTML='<strong>No changes made.</strong><p class="hint">'+errors.map(esc).join('; ')+'</p>';if(typeof aiErr!=='undefined'&&aiErr)box.innerHTML+='<p class="hint" style="color:#ff8a8a">Vector AI didn’t answer: '+esc(aiErr)+'</p>';return;}
   let when=d=>{if(d===day())return 'today';if(d===plusDays(day(),1))return 'tomorrow';const [y,m,dd]=d.split('-').map(Number);const t=new Date(y,m-1,dd);return t.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:y===new Date().getFullYear()?undefined:'numeric'});};
   let $=c=>window.Finance?window.Finance.money(c):'$'+(c/100).toFixed(2);
-  let FIT=a=>window.Fitness?window.Fitness.describe({kind:a.fkind,activity:a.activity,minutes:a.minutes,miles:a.miles,value:a.value,note:a.note,calories:a.calories,protein:a.protein}):a.fkind;
+  let FIT=a=>(a.fkind==='meal'&&(a.slot||a.time)&&window.Nutrition?(a.slot?(window.Nutrition.N(a.personId).slots.find(x=>x.id===a.slot)||{}).name+' · ':'')+(a.time?'🕐 '+a.time+' · ':''):'')+(window.Fitness?window.Fitness.describe({kind:a.fkind,activity:a.activity,minutes:a.minutes,miles:a.miles,value:a.value,note:a.note,calories:a.calories,protein:a.protein}):a.fkind);
   const SETS=s=>{const g=[];for(const x of s){const t=(x.w==null?'?':x.w===0?'BW':x.w)+'×'+x.r;const l=g.at(-1);if(l&&l.t===t)l.n++;else g.push({t,n:1});}return g.map(x=>x.n>1?x.t+' ×'+x.n:x.t).join(', ');};
   const DN=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const LIFT=a=>{const R=window.Strength.analyze(a.session);return a.session.name+' for '+a.who+' · '+when(a.session.date)+' — '+R.map(r=>r.actual.length?r.name+' '+SETS(r.actual)+(r.planned.length?' (plan '+SETS(r.planned)+')':'')+' '+r.verdict.i+' '+r.verdict.t+(r.delta!=null?' '+(r.delta>=0?'+':'−')+Math.abs(Math.round(r.delta*100))+'%':'')+(r.pr?' 🏆 PR':''):r.name+' skipped').join('; ');};
@@ -301,7 +312,7 @@ window.applyPreview=function(){
     else if(a.kind==='goalnew'){window.Savings.create({name:a.title,target:a.amount,deadline:a.date});}
     else if(a.kind==='goaladd'){window.Savings.contribute(a.id,a.amount,a.date);}
     else if(a.kind==='grocery'){window.Grocery.add(a.items,'voice');}
-    else if(a.kind==='fit'){window.Fitness.add({personId:a.personId,date:a.date,kind:a.fkind,activity:a.activity,minutes:a.minutes,miles:a.miles,value:a.value,note:a.note,calories:a.calories,protein:a.protein});}
+    else if(a.kind==='fit'){window.Fitness.add({personId:a.personId,date:a.date,kind:a.fkind,activity:a.activity,minutes:a.minutes,miles:a.miles,value:a.value,note:a.note,calories:a.calories,protein:a.protein,carbs:a.carbs,fat:a.fat,time:a.time||undefined,slot:a.slot||undefined});}
     else if(a.kind==='mealplan'){window.Fitness.setMeal(a.date,a.slot,a.note,a.personId);}
     else if(a.kind==='faststart'){window.Nutrition.startFast(a.personId,a.goal);}
     else if(a.kind==='fastend'){window.Nutrition.endFast(a.personId);}

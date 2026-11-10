@@ -77,6 +77,38 @@ module.exports = {
     assert.eq(await app.page.$$eval('#cuName,#cuCal,#cuP,#cuC,#cuF', e => e.map(x => x.value)), ['Oatmeal with banana', '350', '10', '65', '6'], 'estimate prefilled for review');
     assert.noErrors(app); await app.close();
   },
+  async 'per-meal macro targets: even and custom split'() {
+    const app = await open({ time: MORNING, data: fam() });
+    await app.page.evaluate(() => { const n = window.Nutrition.N('me'); n.targets = { cal: 2400, p: 180, c: 240, f: 80 }; persist(); });
+    await app.tab('meals');
+    assert.eq(await app.page.evaluate(() => window.Nutrition.slotTarget(window.Nutrition.N('me'), 's1')), { cal: 800, p: 60, c: 80, f: 27 }, 'even thirds');
+    await app.page.click('[data-nu="targets"]'); await app.page.click('[data-nu="splitmode"][data-v="custom"]');
+    const set = async (sl, v) => app.page.fill(`.nu-pct[data-s="${sl}"]`, String(v));
+    await set('s1', 20); await set('s2', 30); await set('s3', 40); await app.page.click('[data-nu="savetargets"]');
+    assert.match(await app.page.$eval('#toast', e => e.textContent), /add up to 90%/, 'must total 100');
+    await set('s3', 50); await app.page.click('[data-nu="savetargets"]');
+    assert.eq(await app.page.evaluate(() => ['s1', 's2', 's3'].map(s => window.Nutrition.slotTarget(window.Nutrition.N('me'), s).cal)), [480, 720, 1200]);
+    await app.page.evaluate(() => { window.Nutrition.addFood('me', { name: 'Oats', cal: 300, p: 10, c: 54, f: 5 }, 's1', '2026-11-18', '07:40'); persist(); });
+    assert.match(await app.page.$eval('#meals .nu-slot', e => e.textContent), /300\/480 cal/, 'meal shows its own target');
+    assert.noErrors(app); await app.close();
+  },
+  async 'time eaten: recorded, editable, eating window, timing chart, ends a fast'() {
+    const app = await open({ time: new Date(2026, 10, 18, 13, 5), data: { ...fam(), fitness: { ...fam().fitness, fasts: [{ id: 'f', personId: 'me', start: new Date(2026, 10, 17, 20, 0).toISOString(), end: null, goal: 16 }] } } });
+    assert.eq(await app.cmd('ate a turkey sandwich 450 calories at 12:30 for lunch'), ['Log for Keith: Lunch · 🕐 12:30 · 🍽️ turkey sandwich · 450 cal · today']);
+    await app.cmd('ate a turkey sandwich 450 calories at 12:30 for lunch', true); await app.page.waitForTimeout(100);
+    const f = (await app.data()).fitness;
+    assert.eq([f.logs[0].slot, f.logs[0].time], ['s2', '12:30']);
+    assert.ok(f.fasts[0].end && Math.abs(new Date(f.fasts[0].end) - new Date(2026, 10, 18, 12, 30)) < 1000, 'eating ended the fast at 12:30');
+    assert.match(await app.page.$eval('#toast', e => e.textContent), /16\.5 h 🎉 goal reached/);
+    await app.page.evaluate(() => { window.Nutrition.addFood('me', { name: 'Apple', cal: 95 }, 's3', '2026-11-18', '19:10'); persist(); });
+    await app.tab('meals');
+    assert.match(await app.page.$eval('#meals .panel:nth-of-type(2)', e => e.textContent), /Eating window: 12:30 PM – 7:10 PM \(6h 40m\)/);
+    app.dialogs.push('7:30 pm'); await app.page.click('[data-nu="edittime"] >> nth=1'); await app.page.waitForTimeout(150);
+    assert.eq((await app.data()).fitness.logs.find(l => l.note === 'Apple').time, '19:30', 'time edited');
+    assert.ok(await app.page.$('svg[aria-label="Meal times, last 7 days"]'), 'timing chart drawn');
+    assert.match(await app.page.evaluate(() => [...document.querySelectorAll('#meals .panel')].find(p => /Meal timing/.test(p.textContent)).textContent), /Avg first meal12:30 PM.*Avg last meal7:30 PM/);
+    assert.noErrors(app); await app.close();
+  },
   async 'USDA food search: parses results (mocked API)'() {
     const app = await open({ time: MORNING, data: fam() });
     await app.page.route('https://api.nal.usda.gov/**', r => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ foods: [

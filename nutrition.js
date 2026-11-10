@@ -43,7 +43,21 @@ function slotForNow(pid){const n=N(person(pid)),now=new Date(),mins=now.getHours
  n.slots.forEach((s,i)=>{const t=s.time?(+s.time.slice(0,2))*60+(+s.time.slice(3,5)):(7+i*(12/Math.max(1,n.slots.length)))*60;const d=Math.abs(t-mins);if(d<bd){bd=d;best=s;}});return best?best.id:'s1';}
 const mealsOn=(pid,d)=>FT().logs.filter(l=>l.kind==='meal'&&l.personId===pid&&l.date===d);
 const totals=L=>L.reduce((a,l)=>({cal:a.cal+(+l.calories||0),p:a.p+(+l.protein||0),c:a.c+(+l.carbs||0),f:a.f+(+l.fat||0)}),{cal:0,p:0,c:0,f:0});
-function addFood(pid,item,slot,date){const e=window.Fitness.add({personId:pid,date:date||day(),kind:'meal',note:item.name,calories:r0(item.cal),protein:r0(item.p),carbs:r0(item.c),fat:r0(item.f)});e.slot=slot||slotForNow(pid);if(item.qty)e.qty=item.qty;return e;}
+const nowHM=()=>{const d=new Date();return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;};
+const hmLabel=hm=>{if(!hm)return '';const [h,m]=hm.split(':').map(Number);const d=new Date();d.setHours(h,m,0,0);return d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});};
+// when a food was eaten: its own time, else the time it was logged (same day), else the slot time
+function eatenAt(l){if(l.time)return l.time;if(l.created){const d=new Date(l.created);if(day(d)===l.date)return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;}return '';}
+const hmToMin=hm=>hm?(+hm.slice(0,2))*60+(+hm.slice(3,5)):null;
+function addFood(pid,item,slot,date,time){
+ const d=date||day(),t=time||(d===day()?nowHM():'');
+ const e=window.Fitness.add({personId:pid,date:d,kind:'meal',note:item.name,calories:r0(item.cal),protein:r0(item.p),carbs:r0(item.c),fat:r0(item.f),slot:slot||slotForNow(pid),time:t||undefined});
+ if(item.qty)e.qty=item.qty;return e;
+}
+// share of the day's targets for each meal: even split, or your own percentages
+function slotShare(n,slotId){const sp=n.split||{};if(sp.mode==='custom'&&sp.pct&&sp.pct[slotId]!=null)return sp.pct[slotId]/100;return 1/Math.max(1,n.slots.length);}
+function slotTarget(n,slotId){const t=n.targets||{},k=slotShare(n,slotId);return {cal:t.cal?Math.round(t.cal*k):null,p:t.p?Math.round(t.p*k):null,c:t.c?Math.round(t.c*k):null,f:t.f?Math.round(t.f*k):null};}
+function eatingWindow(pid,d){const ts=mealsOn(pid,d).map(eatenAt).filter(Boolean).map(hmToMin).sort((a,b)=>a-b);return ts.length?{first:ts[0],last:ts[ts.length-1],count:ts.length,mins:ts[ts.length-1]-ts[0]}:null;}
+const minLabel=m=>hmLabel(`${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`);
 // Mifflin-St Jeor resting energy x activity + goal; protein by body weight, fat 28%, carbs the rest
 function calcTargets(pr){
  const kg=pr.weightLb*0.4536,cm=pr.heightIn*2.54,bmr=10*kg+6.25*cm-5*pr.age+(pr.sex==='female'?-161:5);
@@ -61,7 +75,15 @@ function fastStats(pid){const L=FT().fasts.filter(x=>x.personId===pid&&x.end).so
 function planFor(pid){return FT().plans2[pid]||(FT().plans2[pid]={});}
 function setPlan(pid,date,slot,text){const p=planFor(pid);(p[date]=p[date]||{});if(text)p[date][slot]=String(text).slice(0,120);else delete p[date][slot];}
 function plannedMeals(week){const t=new Date(),s=new Date(t);s.setDate(t.getDate()-t.getDay()+7*week);const out=[];for(const pp of FT().people){const pl=FT().plans2[pp.id]||{};for(let i=0;i<7;i++){const d=new Date(s);d.setDate(s.getDate()+i);const k=day(d);for(const [slot,m] of Object.entries(pl[k]||{}))if(m)out.push({who:pp.name,date:k,slot,meal:m});}}return out;}
-window.Nutrition={PATTERNS,FOODS,calcTargets,slotForNow,startFast,endFast,activeFast,fastStats,setPlan,plannedMeals,totals,mealsOn,N:pid=>N(person(pid)),addFood};
+// eating breaks a fast: logging food today ends an active fast at the time eaten
+function mealLogged(e){
+ if(e.date!==day())return;const x=activeFast(e.personId);if(!x)return;
+ const t=e.time?(()=>{const d=new Date();d.setHours(+e.time.slice(0,2),+e.time.slice(3,5),0,0);return d;})():new Date();
+ if(t<=new Date(x.start))return;x.end=t.toISOString();const h=(t-new Date(x.start))/36e5;
+ setTimeout(()=>{try{toast(`Fast ended at ${t.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}: ${h.toFixed(1)} h${h>=x.goal?' 🎉 goal reached':''}`);}catch(_){}},50);
+}
+function timing(pid,days=7){const out=[];for(let i=days-1;i>=0;i--){const d=addDays(day(),-i);const ts=mealsOn(pid,d).map(l=>({m:hmToMin(eatenAt(l)),l})).filter(x=>x.m!=null).sort((a,b)=>a.m-b.m);out.push({d,ts});}return out;}
+window.Nutrition={mealLogged,timing,eatenAt,slotTarget,eatingWindow,PATTERNS,FOODS,calcTargets,slotForNow,startFast,endFast,activeFast,fastStats,setPlan,plannedMeals,totals,mealsOn,N:pid=>N(person(pid)),addFood};
 
 // ---- view ---------------------------------------------------------------
 let dayView=day(),adding=null,addTab='recent',showTargets=false,showPattern=false,planWeek=0,usdaRes=null,estimate=null,tick=null;
@@ -101,6 +123,7 @@ function macroCard(pid){
  return `<div class="panel"><div class="mn-head"><button class="btn alt sm" data-nu="dprev" aria-label="Previous day">‹</button><h2>${dayView===day()?'Today':pd(dayView).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'})}</h2><button class="btn alt sm" data-nu="dnext" aria-label="Next day">›</button></div>
   <div class="nu-macros">${cell(tot.cal,t.cal,'Calories')}${cell(tot.p,t.p,'Protein','g')}${cell(tot.c,t.c,'Carbs','g')}${cell(tot.f,t.f,'Fat','g')}</div>
   <p class="hint" style="margin:8px 0 0">${left==null?'Set your targets to see what’s left.':left>=0?`<b>${r0(left)}</b> calories left${t.p&&tot.p<t.p?` · <b>${r0(t.p-tot.p)} g</b> protein to go`:''}`:`<b style="color:${C.warn}">${r0(-left)}</b> calories over target`}</p>
+  ${(()=>{const w=eatingWindow(pid,dayView);return w?`<p class="hint" style="margin:4px 0 0">🕐 Eating window: <b>${minLabel(w.first)}${w.count>1?` – ${minLabel(w.last)}`:''}</b>${w.count>1?` (${Math.floor(w.mins/60)}h ${w.mins%60}m)`:''} · ${w.count} item${w.count>1?'s':''} logged</p>`:'';})()}
   <div class="actions" style="margin-top:10px"><button class="btn alt sm" data-nu="targets">${showTargets?'Close':'🎯 Targets'}</button><button class="btn alt sm" data-nu="pattern">${showPattern?'Close':'🍽️ Eating pattern: '+(PATTERNS[n.pattern]||PATTERNS.custom).label}</button></div>
   ${showPattern?patternHtml(n):''}${showTargets?targetsHtml(pid,n):''}</div>`;
 }
@@ -112,7 +135,10 @@ function patternHtml(n){
 function targetsHtml(pid,n){
  const pr=n.profile||{},S=window.Fitness.stats(pid),wt=pr.weightLb||(S.latestW?+S.latestW.value:''),t=n.targets||{};
  return `<div class="nu-sheet"><b>Daily targets</b><div class="two"><div><label>Calories</label><input id="tgCal" inputmode="numeric" value="${t.cal||''}"></div><div><label>Protein (g)</label><input id="tgP" inputmode="numeric" value="${t.p||''}"></div></div><div class="two"><div><label>Carbs (g)</label><input id="tgC" inputmode="numeric" value="${t.c||''}"></div><div><label>Fat (g)</label><input id="tgF" inputmode="numeric" value="${t.f||''}"></div></div>
-  <button class="btn sm" style="margin-top:8px" data-nu="savetargets">Save targets</button>
+  <b style="display:block;margin-top:12px">Split across meals</b>
+  <div class="fa-goals" style="margin-top:6px"><button data-nu="splitmode" data-v="even" class="${(n.split||{}).mode!=='custom'?'on':''}">Even</button><button data-nu="splitmode" data-v="custom" class="${(n.split||{}).mode==='custom'?'on':''}">Custom %</button></div>
+  ${n.slots.map(sl=>{const k=slotShare(n,sl.id),st=slotTarget(n,sl.id);return `<div style="display:flex;align-items:center;gap:8px;margin-top:6px"><span style="flex:1;font-size:13px">${esc(sl.name)}<span class="muted small" style="display:block">${st.cal?`${st.cal} cal · ${st.p||0}P ${st.c||0}C ${st.f||0}F`:'set daily targets first'}</span></span>${(n.split||{}).mode==='custom'?`<input class="nu-pct" data-s="${sl.id}" inputmode="numeric" value="${Math.round(k*100)}" style="width:62px;padding:7px;text-align:center" aria-label="${esc(sl.name)} percent">%`:`<span class="muted small">${Math.round(k*100)}%</span>`}</div>`;}).join('')}
+  <button class="btn sm" style="margin-top:10px" data-nu="savetargets">Save targets</button>
   <b style="display:block;margin-top:14px">…or calculate them</b>
   <div class="two"><div><label>Sex</label><select id="pfSex"><option value="male"${pr.sex!=='female'?' selected':''}>Male</option><option value="female"${pr.sex==='female'?' selected':''}>Female</option></select></div><div><label>Age</label><input id="pfAge" inputmode="numeric" value="${pr.age||''}"></div></div>
   <div class="two"><div><label>Height (ft / in)</label><div style="display:flex;gap:6px"><input id="pfFt" inputmode="numeric" placeholder="5" value="${pr.heightIn?Math.floor(pr.heightIn/12):''}"><input id="pfIn" inputmode="numeric" placeholder="10" value="${pr.heightIn?pr.heightIn%12:''}"></div></div><div><label>Weight (lb)</label><input id="pfWt" inputmode="decimal" value="${wt}"></div></div>
@@ -124,8 +150,11 @@ function targetsHtml(pid,n){
 function logCard(pid){
  const n=N(person(pid)),L=mealsOn(pid,dayView),slots=n.slots.length?n.slots:mkSlots('classic');
  const known=new Set(slots.map(s=>s.id)),other=L.filter(l=>!known.has(l.slot));
- const block=(s,items)=>{const t=totals(items);return `<div class="nu-slot"><div class="h"><b>${esc(s.name)}</b><span>${s.time?s.time+' · ':''}${r0(t.cal)} cal${t.p?` · ${r0(t.p)}g P`:''}</span><button class="btn alt sm" data-nu="add" data-s="${s.id}">+ Add</button></div>
-  ${items.map(l=>`<div class="nu-item"><div class="g">${esc(l.note||'Food')}<div class="s">${l.calories?r0(l.calories)+' cal':''}${l.protein?' · '+r0(l.protein)+'g P':''}${l.carbs?' · '+r0(l.carbs)+'g C':''}${l.fat?' · '+r0(l.fat)+'g F':''}</div></div><button class="x" data-nu="delfood" data-id="${l.id}" aria-label="Remove">✕</button></div>`).join('')}
+ const mini=(v,tg,l)=>{if(!tg)return '';const p=v/tg;return `<div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;font-size:10.5px;color:${C.ink3}"><span>${l}</span><span style="font-variant-numeric:tabular-nums">${r0(v)}/${tg}</span></div><div style="height:5px;border-radius:3px;background:#14263a;margin-top:2px;overflow:hidden"><i style="display:block;height:100%;width:${Math.min(100,p*100)}%;background:${p>1.1?C.warn:p>=0.9?C.good:C.s1}"></i></div></div>`;};
+ const block=(s,items)=>{const t=totals(items),tg=s.id==='other'?{}:slotTarget(n,s.id);const sorted=items.slice().sort((a,b)=>(eatenAt(a)||'99').localeCompare(eatenAt(b)||'99'));
+  return `<div class="nu-slot"><div class="h"><b>${esc(s.name)}</b><span>${s.time?s.time+' · ':''}${r0(t.cal)}${tg.cal?'/'+tg.cal:''} cal</span><button class="btn alt sm" data-nu="add" data-s="${s.id}">+ Add</button></div>
+  ${tg.cal?`<div style="display:flex;gap:8px;margin:6px 0 2px">${mini(t.cal,tg.cal,'Cal')}${mini(t.p,tg.p,'P')}${mini(t.c,tg.c,'C')}${mini(t.f,tg.f,'F')}</div>`:''}
+  ${sorted.map(l=>`<div class="nu-item"><button class="chip" data-nu="edittime" data-id="${l.id}" style="border:0;cursor:pointer" aria-label="Change time eaten">🕐 ${eatenAt(l)?hmLabel(eatenAt(l)):'set time'}</button><div class="g">${esc(l.note||'Food')}<div class="s">${l.calories?r0(l.calories)+' cal':''}${l.protein?' · '+r0(l.protein)+'g P':''}${l.carbs?' · '+r0(l.carbs)+'g C':''}${l.fat?' · '+r0(l.fat)+'g F':''}</div></div><button class="x" data-nu="delfood" data-id="${l.id}" aria-label="Remove">✕</button></div>`).join('')}
   ${adding===s.id?addSheet(pid,s.id):''}</div>`;};
  return `<div class="panel"><h2>Food log</h2>${slots.map(s=>block(s,L.filter(l=>l.slot===s.id))).join('')}${other.length?block({id:'other',name:'Other'},other):''}
   <p class="hint" style="margin:10px 0 0">Hands-free: “ate a turkey sandwich 450 calories”. With Vector AI on, use ✨ Estimate for anything.</p></div>`;
@@ -142,7 +171,7 @@ function addSheet(pid,slot){
  else if(addTab==='usda')body=`<div style="display:flex;gap:6px"><input id="usQ" placeholder="Search foods, e.g. greek yogurt"><button class="btn sm" data-nu="usda">Search</button></div>${usdaRes?usdaRes.error?`<p class="hint" style="color:${C.bad}">${esc(usdaRes.error)}</p>`:usdaRes.items.map((f,i)=>row(f,`data-nu="addusda" data-i="${i}"`,`<input class="nu-g" data-i="${i}" inputmode="decimal" value="100" style="width:60px;padding:6px;text-align:center" aria-label="Grams">`)).join('')+'<p class="hint" style="margin:6px 0 0">Values per 100 g. Set the grams you ate. Source: USDA FoodData Central.</p>':''}`;
  else if(addTab==='custom')body=`<div class="two"><div><label>Food</label><input id="cuName" value="${esc(estimate?.name||'')}"></div><div><label>Calories</label><input id="cuCal" inputmode="numeric" value="${estimate?r0(estimate.cal):''}"></div></div><div class="two"><div><label>Protein g</label><input id="cuP" inputmode="numeric" value="${estimate?r0(estimate.p):''}"></div><div><label>Carbs g · Fat g</label><div style="display:flex;gap:6px"><input id="cuC" inputmode="numeric" value="${estimate?r0(estimate.c):''}"><input id="cuF" inputmode="numeric" value="${estimate?r0(estimate.f):''}"></div></div></div>${estimate?'<p class="hint" style="margin:6px 0">✨ Estimated by Vector. Check and adjust.</p>':''}<button class="btn sm" style="margin-top:8px" data-nu="addcustom">Add</button>`;
  else if(addTab==='ai')body=`<label>Describe what you ate</label><input id="aiFood" placeholder="2 eggs, 2 slices of toast with butter, black coffee"><button class="btn sm" style="margin-top:8px" data-nu="estimate">✨ Estimate</button><p class="hint" style="margin:6px 0 0">Vector estimates the calories and macros. You review them before adding.</p>`;
- return `<div class="nu-sheet"><div class="nu-tabs">${tabs.map(([k,l])=>`<button data-nu="addtab" data-v="${k}" class="${addTab===k?'on':''}">${l}</button>`).join('')}</div>${body}<div class="actions" style="margin-top:8px"><button class="btn alt sm" data-nu="closeadd">Done</button></div></div>`;
+ return `<div class="nu-sheet"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><label style="margin:0;font-size:12px">Eaten at</label><input id="nuTime" type="time" value="${dayView===day()?nowHM():(person(pid).nutrition.slots.find(x=>x.id===slot)||{}).time||'12:00'}" style="width:auto;padding:7px"></div><div class="nu-tabs">${tabs.map(([k,l])=>`<button data-nu="addtab" data-v="${k}" class="${addTab===k?'on':''}">${l}</button>`).join('')}</div>${body}<div class="actions" style="margin-top:8px"><button class="btn alt sm" data-nu="closeadd">Done</button></div></div>`;
 }
 function planCard(pid){
  const n=N(person(pid)),pl=planFor(pid),t=pd(day());const s=new Date(t);s.setDate(t.getDate()-t.getDay()+7*planWeek);
@@ -152,10 +181,24 @@ function planCard(pid){
   <div class="actions" style="margin-top:8px"><button class="btn alt sm" data-nu="copyweek">Copy last week</button></div>
   <p class="hint" style="margin:8px 0 0">Tap a slot to plan it. With Vector AI on: “plan high-protein meals for next week”.</p></div>`;
 }
+function timingCard(pid){
+ const T=timing(pid,7),withData=T.filter(x=>x.ts.length);if(!withData.length)return '';
+ const W=Math.max(280,(section.clientWidth||360)-36),L=40,R=8,top=18,rowH=22,H=top+rowH*7+18,x=m=>L+m/1440*(W-L-R);
+ let svg='';for(const h of [0,6,12,18,24])svg+=`<line x1="${x(h*60)}" x2="${x(h*60)}" y1="${top-4}" y2="${H-16}" stroke="${C.grid}"/><text x="${x(h*60)}" y="${H-4}" text-anchor="middle" font-size="10" fill="${C.ink3}">${h===0||h===24?'12a':h===12?'12p':h<12?h+'a':(h-12)+'p'}</text>`;
+ T.forEach((r,i)=>{const y=top+i*rowH+rowH/2;svg+=`<text x="${L-6}" y="${y+3.5}" text-anchor="end" font-size="10.5" fill="${C.ink2}">${pd(r.d).toLocaleDateString(undefined,{weekday:'short'})}</text>`;
+  if(r.ts.length>1)svg+=`<line x1="${x(r.ts[0].m)}" x2="${x(r.ts[r.ts.length-1].m)}" y1="${y}" y2="${y}" stroke="${C.s1}" stroke-opacity=".35" stroke-width="8" stroke-linecap="round"/>`;
+  for(const t of r.ts)svg+=`<circle cx="${x(t.m)}" cy="${y}" r="4.5" fill="${C.s1}" stroke="${C.surface}" stroke-width="2"><title>${esc(t.l.note||'Food')} · ${minLabel(t.m)}${t.l.calories?' · '+r0(t.l.calories)+' cal':''}</title></circle>`;});
+ const firsts=withData.map(r=>r.ts[0].m),lasts=withData.map(r=>r.ts[r.ts.length-1].m),avg=a=>Math.round(a.reduce((x,y)=>x+y,0)/a.length);
+ const win=avg(withData.map(r=>r.ts[r.ts.length-1].m-r.ts[0].m));
+ return `<div class="panel"><h2>Meal timing</h2><p class="hint" style="margin:0 0 6px">When you ate over the last 7 days. Each dot is a food. The bar is your eating window.</p>
+  <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Meal times, last 7 days">${svg}</svg>
+  <div class="dz-tiles" style="margin-top:8px"><div class="dz-tile"><div class="l">Avg first meal</div><div class="v" style="font-size:18px">${minLabel(avg(firsts))}</div></div><div class="dz-tile"><div class="l">Avg last meal</div><div class="v" style="font-size:18px">${minLabel(avg(lasts))}</div></div>
+  <div class="dz-tile"><div class="l">Avg eating window</div><div class="v" style="font-size:18px">${Math.floor(win/60)}h ${win%60}m</div></div><div class="dz-tile"><div class="l">Avg items per day</div><div class="v" style="font-size:18px">${(withData.reduce((a,r)=>a+r.ts.length,0)/withData.length).toFixed(1)}</div></div></div></div>`;
+}
 function render2(){
  if(!window.Fitness)return;const people=FT().people,pid=sel();
  const chips=`<div class="panel"><div class="ft-chips">${people.map(p=>`<button class="ft-chip${p.id===pid?' on':''}" data-nu="who" data-id="${p.id}">${esc(p.name)}</button>`).join('')}</div></div>`;
- section.innerHTML=chips+macroCard(pid)+fastCard(pid)+logCard(pid)+planCard(pid);
+ section.innerHTML=chips+macroCard(pid)+fastCard(pid)+logCard(pid)+timingCard(pid)+planCard(pid);
  if(window.Grocery&&window.Grocery.inject)window.Grocery.inject();
  clearInterval(tick);if(activeFast(pid))tick=setInterval(()=>{if(view!=='meals'||document.hidden)return;const a=activeFast(pid);if(!a)return clearInterval(tick);const ms=Date.now()-new Date(a.start),el=document.getElementById('faT');if(el)el.textContent=fmtH(ms);},30000);
 }
@@ -170,7 +213,9 @@ section.addEventListener('click',async e=>{
  else if(a==='pattern'){showPattern=!showPattern;showTargets=false;}
  else if(a==='setpat'){const k=b.dataset.v;n.pattern=k;if(k!=='custom')n.slots=mkSlots(k);else if(!n.slots.length)n.slots=mkSlots('classic');if(PATTERNS[k].fast)n.fastGoal=PATTERNS[k].fast;if(k!=='custom')showPattern=false;toast(`${P.name}: ${PATTERNS[k].label}`);}
  else if(a==='savecustom'){const names=document.getElementById('nuCustom').value.split(',').map(s=>s.trim()).filter(Boolean).slice(0,8);if(!names.length){toast('Name at least one meal.');return;}n.slots=names.map((nm,i)=>({id:'s'+(i+1),name:nm.slice(0,24),time:''}));toast('Meals saved.');}
- else if(a==='savetargets'){n.targets={cal:num('tgCal'),p:num('tgP'),c:num('tgC'),f:num('tgF')};P.goals={...P.goals,calories:n.targets.cal,protein:n.targets.p};showTargets=false;toast('Targets saved.');}
+ else if(a==='splitmode'){n.split={mode:b.dataset.v,pct:n.split&&n.split.pct||Object.fromEntries(n.slots.map(sl=>[sl.id,Math.round(100/n.slots.length)]))};}
+ else if(a==='savetargets'){const pc=[...section.querySelectorAll('.nu-pct')];if(pc.length){const pct=Object.fromEntries(pc.map(i=>[i.dataset.s,Math.max(0,+i.value||0)]));const sum=Object.values(pct).reduce((x,y)=>x+y,0);if(Math.abs(sum-100)>1){toast(`Meal percentages add up to ${sum}%. Make them 100%.`);return;}n.split={mode:'custom',pct};}
+  n.targets={cal:num('tgCal'),p:num('tgP'),c:num('tgC'),f:num('tgF')};P.goals={...P.goals,calories:n.targets.cal,protein:n.targets.p};showTargets=false;toast('Targets saved.');}
  else if(a==='calc'){const pr={sex:document.getElementById('pfSex').value,age:num('pfAge'),heightIn:(num('pfFt')||0)*12+(num('pfIn')||0),weightLb:num('pfWt'),activity:+document.getElementById('pfAct').value,goal:+document.getElementById('pfGoal').value,proteinPerLb:+document.getElementById('pfPro').value};
   if(!pr.age||!pr.heightIn||!pr.weightLb){toast('Enter age, height and weight.');return;}const r=calcTargets(pr);n.profile=pr;n.targets={cal:r.cal,p:r.p,c:r.c,f:r.f};P.goals={...P.goals,calories:r.cal,protein:r.p};showTargets=false;
   toast(`${r.cal} cal · ${r.p}P ${r.c}C ${r.f}F (maintenance ≈ ${r.tdee})${r.low?' · raised to a safe minimum':''}`);}
@@ -188,10 +233,11 @@ section.addEventListener('click',async e=>{
   else if(a==='addmine')item=f.myMeals[+b.dataset.i];
   else if(a==='addcommon'){const x=FOODS[+b.dataset.i],q=parseFloat(section.querySelector(`.nu-qty[data-i="${b.dataset.i}"]`)?.value)||1;item={name:(q!==1?q+' × ':'')+x[0],cal:x[3]*q,p:x[4]*q,c:x[5]*q,f:x[6]*q};}
   else{const x=usdaRes.items[+b.dataset.i],g=parseFloat(section.querySelector(`.nu-g[data-i="${b.dataset.i}"]`)?.value)||100,k=g/100;item={name:`${x.name} (${g} g)`,cal:x.cal*k,p:x.p*k,c:x.c*k,f:x.f*k};}
-  addFood(pid,item,adding,dayView);toast('Added '+item.name+'.');}
- else if(a==='addcustom'){const name=document.getElementById('cuName').value.trim(),cal=num('cuCal');if(!name&&!cal){toast('Enter a food or calories.');return;}addFood(pid,{name:name||'Food',cal,p:num('cuP'),c:num('cuC'),f:num('cuF')},adding,dayView);estimate=null;toast('Added.');}
+  addFood(pid,item,adding,dayView,document.getElementById('nuTime')?.value);toast('Added '+item.name+'.');}
+ else if(a==='addcustom'){const name=document.getElementById('cuName').value.trim(),cal=num('cuCal');if(!name&&!cal){toast('Enter a food or calories.');return;}addFood(pid,{name:name||'Food',cal,p:num('cuP'),c:num('cuC'),f:num('cuF')},adding,dayView,document.getElementById('nuTime')?.value);estimate=null;toast('Added.');}
  else if(a==='savemine'){const name=document.getElementById('mmName').value.trim(),m=document.getElementById('mmMac').value.split(/[,\s]+/).map(Number);if(!name||!(m[0]>0)){toast('Enter a name and at least calories.');return;}f.myMeals.push({name,cal:m[0],p:m[1]||0,c:m[2]||0,f:m[3]||0});toast('Meal saved.');}
  else if(a==='delmine'){f.myMeals.splice(+b.dataset.i,1);}
+ else if(a==='edittime'){const l=f.logs.find(x=>x.id===b.dataset.id);const v=prompt('What time did you eat this? (e.g. 12:30 pm)',eatenAt(l)?hmLabel(eatenAt(l)):'');if(!v)return;const iso=parseTime(v);if(!iso){toast('Couldn’t read that time.');return;}const d=new Date(iso);l.time=`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;}
  else if(a==='delfood'){f.logs=f.logs.filter(l=>l.id!==b.dataset.id);}
  else if(a==='usda'){const q=document.getElementById('usQ').value.trim();if(!q)return;usdaRes={items:[]};b.disabled=true;b.textContent='…';usdaRes=await usdaSearch(q);render2();return;}
  else if(a==='estimate'){const q=document.getElementById('aiFood').value.trim();if(!q)return;b.disabled=true;b.textContent='Estimating…';

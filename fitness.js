@@ -26,9 +26,9 @@ function person(nameOrId){
 function add(log){
  const f=fit(),p=person(log.personId)||f.people[0];
  const e={id:uuid(),personId:p.id,date:log.date||day(),kind:log.kind,created:stamp()};
- for(const k of ['activity','minutes','miles','value','calories','protein','carbs','fat','slot','note'])if(log[k]!=null&&log[k]!=='')e[k]=log[k];
+ for(const k of ['activity','minutes','miles','value','calories','protein','carbs','fat','slot','time','note'])if(log[k]!=null&&log[k]!=='')e[k]=log[k];
  if(e.kind==='meal'&&!e.slot&&window.Nutrition)e.slot=window.Nutrition.slotForNow(p.id);
- f.logs.push(e);log_('fitness_'+e.kind,p.name+': '+describe(e));return e;
+ f.logs.push(e);if(e.kind==='meal'&&window.Nutrition&&window.Nutrition.mealLogged)window.Nutrition.mealLogged(e);log_('fitness_'+e.kind,p.name+': '+describe(e));return e;
 }
 function log_(type,details){try{log(type,null,details);}catch(_){}}
 function setMeal(date,slot,text,pid){
