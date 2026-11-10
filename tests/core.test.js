@@ -1,4 +1,4 @@
-const { open, assert, task } = require('./harness');
+const { open, assert, task, empty } = require('./harness');
 const NOV18 = new Date(2026, 10, 18, 10, 0); // a Wednesday
 
 module.exports = {
@@ -69,6 +69,20 @@ module.exports = {
     assert.eq((await app.data()).tasks.length, 1);
     await app.say("that's all", 300);
     assert.match(await app.page.$eval('#wakePill', e => e.textContent), /Vector, open/);
+    assert.noErrors(app); await app.close();
+  },
+  async 'task areas: general for new users, existing areas kept, editable in Settings'() {
+    const fresh = await open();
+    assert.eq(await fresh.page.$$eval('#taskArea option', o => o.map(x => x.value)), ['Work', 'Home', 'Family', 'Health', 'Money', 'Personal']);
+    assert.match((await fresh.cmd('add pay the electric bill tomorrow')).join(' '), /Money/);
+    assert.ok(!/BCI|Keith|Amanda/.test(await fresh.page.evaluate(() => document.body.innerText)), 'no personal details shown');
+    await fresh.close();
+    const app = await open({ data: { ...empty(), tasks: [task('Quarterly report', '2026-11-10', { area: 'BCI / Career' })] } });
+    assert.ok((await app.page.$$eval('#taskArea option', o => o.map(x => x.value))).includes('BCI / Career'), 'areas already in use stay');
+    await app.tab('settings');
+    await app.page.fill('#areaList', 'Job, Kids, Church'); await app.page.click('#areaSave');
+    assert.eq(await app.page.$$eval('#taskArea option', o => o.map(x => x.value)), ['Job', 'Kids', 'Church']);
+    assert.eq((await app.data()).areas, ['Job', 'Kids', 'Church']);
     assert.noErrors(app); await app.close();
   },
 };

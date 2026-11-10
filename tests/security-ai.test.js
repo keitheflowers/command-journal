@@ -44,9 +44,9 @@ module.exports = {
   },
   async 'AI: request shape, actions mapped, unknown task skipped'() {
     let reqTask;
-    const app = await open({ time: NOV10, data: withTask(), ai: body => { reqTask = JSON.parse(body.messages[0].content.split('CONTEXT:\n')[1].split('\n\n')[0]).OPEN_TASKS[0]; return { json: { reply: '', actions: [A({ kind: 'add_task', title: 'Call Amanda', date: '2026-11-13', priority: 'High', area: 'Family / Personal' }), A({ kind: 'move_task', task_id: reqTask.task_id, date: '2026-11-16' }), A({ kind: 'txn', money_type: 'expense', amount: 40, category: 'Groceries', note: 'Kroger' }), A({ kind: 'complete_task', task_id: 'made-up' })] } }; } });
+    const app = await open({ time: NOV10, data: withTask(), ai: body => { reqTask = JSON.parse(body.messages[0].content.split('CONTEXT:\n')[1].split('\n\n')[0]).OPEN_TASKS[0]; return { json: { reply: '', actions: [A({ kind: 'add_task', title: 'Call Amanda', date: '2026-11-13', priority: 'High', area: 'Family' }), A({ kind: 'move_task', task_id: reqTask.task_id, date: '2026-11-16' }), A({ kind: 'txn', money_type: 'expense', amount: 40, category: 'Groceries', note: 'Kroger' }), A({ kind: 'complete_task', task_id: 'made-up' })] } }; } });
     const out = await app.cmd('remind me friday to call amanda, push the bank thing to monday and I spent forty at kroger');
-    assert.eq(out, ['Add: Call Amanda · Fri, Nov 13 · High priority · Family / Personal', 'Move to Mon, Nov 16: Call the bank', 'Expense: $40.00 · Groceries · Kroger · today']);
+    assert.eq(out, ['Add: Call Amanda · Fri, Nov 13 · High priority · Family', 'Move to Mon, Nov 16: Call the bank', 'Expense: $40.00 · Groceries · Kroger · today']);
     const r = app.requests[0];
     assert.eq([r.headers['x-api-key'], r.headers['anthropic-dangerous-direct-browser-access'], r.body.model, r.body.fallbacks], ['sk-ant-test', 'true', 'claude-opus-5-5', 'default']);
     assert.match(await app.page.$eval('#commandPreview', e => e.textContent), /Skipped: Could not find that task/);

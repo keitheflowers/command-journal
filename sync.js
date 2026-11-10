@@ -147,7 +147,7 @@ function draw(msg){
   <label>Email</label><input id="syEmail" type="email" autocomplete="email" value="${esc(typed.email||'')}"><label>Password</label><input id="syPw" type="password" autocomplete="current-password" placeholder="At least 8 characters">
   <div class="actions" style="margin-top:10px"><button class="btn" data-sy="in">Sign in</button><button class="btn alt" data-sy="up">Create account</button>${c.fixed?'':'<button class="btn alt sm" data-sy="uncfg">Change server</button>'}</div>`;
  else if(!st.household)body=`<p class="hint">Signed in as <b>${esc(st.session.user.email||'')}</b>. Start a family, or join one with the invite code from a family member’s phone.</p>
-  <label>Family name</label><input id="syName" placeholder="The Flowers family"><div class="actions" style="margin-top:8px"><button class="btn" data-sy="create">Start a family</button></div>
+  <label>Family name</label><input id="syName" placeholder="The Smith family"><div class="actions" style="margin-top:8px"><button class="btn" data-sy="create">Start a family</button></div>
   <label style="margin-top:12px">Invite code</label><input id="syCode" placeholder="ABCD1234" autocapitalize="characters" value="${esc(typed.code||'')}"><div class="actions" style="margin-top:8px"><button class="btn alt" data-sy="join">Join family</button><button class="btn alt sm" data-sy="out">Sign out</button></div>`;
  else{const ai=ls.get(K_AI)==='1'&&ls.get('vectorAiOn')==='1';
   body=`<p class="hint" style="margin:0 0 6px"><b>${esc(st.household.name)}</b> · ${esc(st.session.user.email||'')}</p>

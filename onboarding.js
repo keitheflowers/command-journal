@@ -20,8 +20,8 @@ function draw(){
  const pats=window.Nutrition?Object.entries(window.Nutrition.PATTERNS).filter(([k])=>k!=='custom'):[];
  const body=[
   `<h2>Welcome to The Family Save 👋</h2><p class="hint">Tasks, calendar, money, meals and training for your family, with a voice assistant called Vector. Let’s set up the basics. It takes about a minute.</p>
-   <label>Your name</label><input id="obMe" value="${esc(draft.me)}" placeholder="Keith" autocomplete="given-name">
-   <label>Family members (optional, comma separated)</label><input id="obFam" value="${esc(draft.family)}" placeholder="Amanda, Jordan">`,
+   <label>Your name</label><input id="obMe" value="${esc(draft.me)}" placeholder="Alex" autocomplete="given-name">
+   <label>Family members (optional, comma separated)</label><input id="obFam" value="${esc(draft.family)}" placeholder="Sam, Jamie">`,
   `<h2>Money starting point</h2><p class="hint">Your budget starts from what’s in your main account. Add credit cards, loans and savings later in Money → Accounts.</p>
    <label>Checking account balance today</label><input id="obChk" inputmode="decimal" value="${esc(draft.checking)}" placeholder="2,500.00">`,
   `<h2>How do you eat?</h2><p class="hint">Your food log and meal plan follow this. You can change it any time in Health → Meals.</p>
@@ -58,5 +58,10 @@ window.Onboarding={show};
 // Settings: run it again
 const panel=document.createElement('div');panel.className='panel';panel.innerHTML=`<h2>👋 Setup</h2><p class="hint" style="margin:0 0 8px">Walk through the first-run setup again (names, starting balance, eating pattern).</p><button class="btn alt sm" id="obAgain">Run setup again</button> <a class="btn alt sm" href="privacy.html" style="text-decoration:none;display:inline-block">Privacy</a> <a class="btn alt sm" href="terms.html" style="text-decoration:none;display:inline-block">Terms</a>`;
 document.getElementById('settings').appendChild(panel);panel.querySelector('#obAgain').addEventListener('click',show);
+// Settings: task areas (the categories tasks are filed under)
+const ar=document.createElement('div');ar.className='panel';
+function drawAreas(msg){ar.innerHTML=`<h2>🗂️ Task areas</h2><p class="hint" style="margin:0 0 8px">The categories your tasks are filed under. Rename, add or remove them (comma separated, up to 20).</p><input id="areaList" value="${esc(AREAS.join(', '))}"><div class="actions" style="margin-top:8px"><button class="btn alt sm" id="areaSave">Save areas</button></div>${msg?`<p class="hint" role="status">${esc(msg)}</p>`:''}`;}
+ar.addEventListener('click',e=>{if(e.target.id!=='areaSave')return;const list=document.getElementById('areaList').value.split(',').map(x=>x.trim()).filter(Boolean);if(!list.length){drawAreas('Add at least one area.');return;}data.areas=list.slice(0,20);setAreas(data.areas);persist();drawAreas('Saved. Existing tasks keep their area until you edit them.');});
+drawAreas();document.getElementById('settings').appendChild(ar);
 if(!ls.get(K)&&fresh()&&!(window.AppLock&&window.AppLock.enabled()))setTimeout(show,150);
 })();

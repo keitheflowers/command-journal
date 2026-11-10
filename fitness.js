@@ -125,7 +125,7 @@ function form(){
  return `<div class="panel"><h2>Log it</h2><div class="seg">${kinds.map(([k,l])=>`<button data-ft="kind" data-v="${k}" class="${entry===k?'on':''}">${l}</button>`).join('')}</div>
  <div class="two"><div><label>Who</label><select id="ftWho">${opts}</select></div><div><label>Date</label><input id="ftDate" type="date" value="${today}"></div></div>${fields[entry]}
  <button class="btn full" style="margin-top:12px" data-ft="add">Save</button>
- <p class="hint">Hands-free: “Vector, open Family Save, I ran 3 miles in 30 minutes”, “Amanda walked 20 minutes”, “I weigh 182”, “drank 2 glasses of water”, “slept 7 hours”, “ate a turkey sandwich 450 calories”.</p></div>`;
+ <p class="hint">Hands-free: “Vector, open Family Save, I ran 3 miles in 30 minutes”, “Sam walked 20 minutes”, “I weigh 182”, “drank 2 glasses of water”, “slept 7 hours”, “ate a turkey sandwich 450 calories”.</p></div>`;
 }
 function ringsHtml(P,S){
  const g=P.goals,N=window.Nutrition,nt=N?N.N(P.id):null,tot=N?N.totals(N.mealsOn(P.id,day())):{p:0,cal:0},fast=N?N.activeFast(P.id):null;

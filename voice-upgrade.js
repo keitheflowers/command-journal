@@ -1,6 +1,19 @@
 /* The Family Save multi-action voice interpreter v2 */
 (function(){
 'use strict';
+// Pick a task area from the words in the title, using whatever areas this
+// person has (e.g. "Work" or "Career", "Family" or "Family / Personal").
+function guessArea(title){
+ const L=(typeof AREAS!=='undefined'&&AREAS.length)?AREAS:['Personal'],find=re=>L.find(a=>re.test(a));
+ const rules=[[/\b(?:work|meeting|report|reports|client|boss|project|presentation|accountant|office)\b/i,/work|career|job|business/i],
+  [/\b(?:family|kids?|wife|husband|mom|dad|son|daughter|birthday)\b/i,/family/i],
+  [/\b(?:gym|doctor|dentist|workout|run|meds?|appointment)\b/i,/health|fitness/i],
+  [/\b(?:pay|bill|bank|budget|tax(?:es)?|insurance)\b/i,/money|financ/i],
+  [/\b(?:clean|fix|lawn|laundry|repair|groceries|dishes|garage)\b/i,/home|house/i],
+  [/\b(?:faith|scripture|prayer|church|bible)\b/i,/faith|church|spirit/i]];
+ for(const [words,area] of rules)if(words.test(title)){const a=find(area);if(a)return a;}
+ return find(/personal/i)||L[0];
+}
 function norm(s){return String(s||'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\b(the|a|an|my|task|to|for|please|i|need|want|me|that|is|as)\b/g,' ').replace(/\s+/g,' ').trim();}
 function findTask(q){
   let query=norm(q),open=data.tasks.filter(t=>t.status!=='done');
@@ -67,14 +80,14 @@ function takeAmount(text){
   return {cents:Math.round(n*100),text:(text.slice(0,m.index)+' '+text.slice(m.index+m[0].length)).replace(/\s+/g,' ').trim()};
 }
 const tidyNote=t=>t.replace(/^(?:on|for|at|from|to|in)\s+/i,'').replace(/\s+(?:on|for|at|from|to)$/i,'').replace(/^(?:the|my|a|an)\s+/i,'').replace(/[.,;]+$/,'').trim();
-// ---- Spoken fitness ("I ran 3 miles in 30 minutes", "Amanda walked 20 minutes", "I weigh 182")
+// ---- Spoken fitness ("I ran 3 miles in 30 minutes", "Sam walked 20 minutes", "I weigh 182")
 const WORDN={a:1,an:1,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12};
 const numw=v=>v==null?null:/\d/.test(v)?parseFloat(String(v).replace(/,/g,'')):WORDN[String(v).toLowerCase()]??null;
 const ACTS=[[/\b(ran|run|running|jog|jogged|jogging)\b/,'run'],[/\b(walk|walked|walking)\b/,'walk'],[/\b(bike|biked|biking|cycled|cycling|rode|spin)\b/,'bike'],[/\b(swam|swim|swimming)\b/,'swim'],[/\b(lift|lifted|lifting|weights|strength|gym|worked out|workout|work out)\b/,'strength'],[/\b(yoga|stretch|stretched)\b/,'yoga'],[/\b(hike|hiked|hiking)\b/,'hike'],[/\b(played|basketball|soccer|football|tennis|pickleball|golf)\b/,'sports']];
 function parseFitness(part){
   if(!window.Fitness)return null;
   let text=part,who=null;
-  // leading family member name, or "for Amanda" anywhere
+  // leading family member name, or "for Sam" anywhere
   for(const p of window.Fitness.people()){const n=p.name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
     let m=text.match(new RegExp('^'+n+"(?:'s)?\\s+",'i'));if(m){who=p;text=text.slice(m[0].length);break;}
     m=text.match(new RegExp('\\s+for\\s+'+n+'\\b','i'));if(m){who=p;text=text.replace(m[0],' ');break;}}
@@ -224,7 +237,7 @@ function parse(raw){
   line=line.replace(/\b(?:and|then|also)\s+(?=(?:(?:i|we)\s+)?(?:add|create|make|schedule|complete|completed|finish|finished|mark|move|reschedule|push|spent|paid|bought|earned|received|got paid|deposited|ran|walked|jogged|biked|swam|lifted|worked out|slept|drank|weigh|weighed|ate|put|took|withdrew|transferred|moved|set aside)\b)/gi,'; ');
   line=line.replace(/[,;]\s*(?=(?:(?:i|we)\s+)?(?:add|create|make|schedule|complete|completed|finish|finished|mark|move|reschedule|push|spent|paid|bought|earned|received|got paid|deposited|ran|walked|jogged|biked|swam|lifted|worked out|slept|drank|weigh|weighed|ate|put|took|withdrew|transferred|moved|set aside)\b)/gi,'; ');
   line=line.replace(/\s+(?=(?:add|create|make|schedule|complete|completed|finish|finished|mark|move|reschedule|push)\s+(?:a\s+)?(?:task\b|my\b|the\b))/gi,'; ');
-  // "...and Amanda walked 20 minutes": split before a family member's name followed by an activity
+  // "...and Sam walked 20 minutes": split before a family member's name followed by an activity
   if(window.Fitness){const fam=window.Fitness.people().map(p=>p.name.toLowerCase().replace(/[^a-z ]/g,'').trim()).filter(Boolean).map(n=>n.replace(/\s+/g,'\\s+'));
    if(fam.length)line=line.replace(new RegExp('\\b(?:and|then|also)\\s+(?=(?:'+fam.join('|')+')\\s+(?:ran|walked|jogged|biked|swam|lifted|worked out|did|slept|drank|weighs?|weighed|ate|plan)\\b)','gi'),'; ');}
   let parts=line.split(/\s*;\s*/).map(x=>x.trim()).filter(Boolean),actions=[],errors=[];
@@ -260,7 +273,7 @@ function parse(raw){
       title=title.replace(/\bpriority\s+(?:high|medium|low)\b/ig,'').replace(/\b(?:high|medium|low)\s+priority\b/ig,'').replace(/\s+(?:on|for|to)$/i,'').replace(/\s+/g,' ').trim().replace(/^(?:to\s+|for\s+)/i,'').replace(/[.,;]+$/,'');
       if(!title||title.length>180)errors.push('Invalid task title: '+part);
       else{
-        let area=/\b(?:bci|project reports|accountant)\b/i.test(title)?'BCI / Career':/\b(?:family|kids|wife)\b/i.test(title)?'Family / Personal':/\b(?:faith|scripture|prayer)\b/i.test(title)?'Faith / Growth':'Vector AI';
+        let area=guessArea(title);
         actions.push({kind:'add',title,date,due,priority,area});
       }
     }else errors.push('Unrecognized instruction: '+part);
