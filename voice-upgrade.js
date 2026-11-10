@@ -139,6 +139,17 @@ function parseStrength(part){
   }
   return null;
 }
+function parseBudget(part){
+  if(!window.Budget)return null;let m;const B=window.Budget;
+  if((m=part.match(/^(?:move|shift|transfer)\s+(.+?)\s+from\s+(?:the\s+|my\s+)?(.+?)\s+(?:to|into)\s+(?:the\s+|my\s+)?(.+?)(?:\s+(?:category|budget))?$/i))){
+    const a=takeAmount(m[1]),from=B.findCategory(m[2]),to=B.findCategory(m[3]);if(!a||!from||!to)return null;
+    return {kind:'budgetmove',from,to,amount:a.cents,month:day().slice(0,7)};}
+  if((m=part.match(/^(?:assign|budget|put|allocate)\s+(.+?)\s+(?:to|for|in|into|toward|towards)\s+(?:the\s+|my\s+)?(.+?)(?:\s+(?:category|budget))?$/i))){
+    if(/^put/i.test(part)&&window.Savings&&window.Savings.find(m[2]))return null; // a savings goal wins
+    const a=takeAmount(m[1]),c=B.findCategory(m[2]);if(!a||!c)return null;
+    return {kind:'budgetassign',to:c,amount:a.cents,month:day().slice(0,7)};}
+  return null;
+}
 function parseSavings(part){
   if(!window.Savings)return null;let m;
   if((m=part.match(/^(?:create|add|start|make|set up|setup|open|new)\s+(?:a\s+)?(?:new\s+)?savings?\s+goal\s+(?:for\s+|called\s+|named\s+)?(.+)$/i))){
@@ -199,6 +210,7 @@ function parse(raw){
     part=part.replace(/^(?:i\s+)?(?:have\s+)?(?:just\s+)?(?:please\s+)?/i,'').trim();
     if(/^(?:add|put)\s.+\s(?:to|on)\s(?:the\s|my\s|our\s)?(?:grocery|groceries|shopping)(?:\slist)?$/i.test(part)||/^we/i.test(part)){const gr=parseGrocery(part);if(gr){actions.push(gr);continue;}}
     {const st=parseStrength(part);if(st){if(st.error)errors.push(st.error);else actions.push(st);continue;}}
+    {const bm=parseBudget(part);if(bm){actions.push(bm);continue;}}
     {const sv=parseSavings(part);if(sv){if(sv.error)errors.push(sv.error);else actions.push(sv);continue;}}
     const taskish=/^(?:add|create|make|schedule|remind|move|reschedule|push|complete|completed|finish|finished|mark|update)\b/i.test(part)&&!/^(?:add|log|record)\s+(?:a\s+)?(?:workout|run|walk|weigh|meal)/i.test(part);
     let fitA=!taskish&&/\b(minutes?|mins?|hours?|miles?|km|steps|calories|water|slept|weigh|weighed|\d+(?:\.\d+)?\s*k)\b/i.test(part)?parseFitness(part):null;
@@ -257,7 +269,7 @@ window.interpretCommand=async function(){
   const SETS=s=>{const g=[];for(const x of s){const t=(x.w==null?'?':x.w===0?'BW':x.w)+'×'+x.r;const l=g.at(-1);if(l&&l.t===t)l.n++;else g.push({t,n:1});}return g.map(x=>x.n>1?x.t+' ×'+x.n:x.t).join(', ');};
   const DN=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const LIFT=a=>{const R=window.Strength.analyze(a.session);return a.session.name+' for '+a.who+' · '+when(a.session.date)+' — '+R.map(r=>r.actual.length?r.name+' '+SETS(r.actual)+(r.planned.length?' (plan '+SETS(r.planned)+')':'')+' '+r.verdict.i+' '+r.verdict.t+(r.delta!=null?' '+(r.delta>=0?'+':'−')+Math.abs(Math.round(r.delta*100))+'%':'')+(r.pr?' 🏆 PR':''):r.name+' skipped').join('; ');};
-  let items=actions.map(a=>a.kind==='liftplan'?'Workout plan for '+a.who+': '+a.title+(a.days.length?' ('+a.days.map(d=>DN[d]).join(', ')+')':'')+' — '+a.exercises.map(e=>e.name+' '+SETS(e.sets)).join('; '):a.kind==='liftsession'?LIFT(a):a.kind==='goalnew'?'New savings goal: '+a.title+' · '+$(a.amount)+(a.date?' · by '+when(a.date):''):a.kind==='goaladd'?(a.amount>0?'Savings: +'+$(a.amount)+' → ':'Savings: −'+$(-a.amount)+' from ')+a.title+' · '+when(a.date):a.kind==='grocery'?'Grocery list: '+a.items.map(i=>(i.qty?i.qty+' ':'')+i.name).join(', '):a.kind==='fit'?'Log for '+a.who+': '+FIT(a)+' · '+when(a.date):a.kind==='mealplan'?'Meal plan: '+a.slot+' '+when(a.date)+' · '+a.note:a.kind==='txn'?(a.type==='income'?'Income: ':'Expense: ')+$(a.amount)+' · '+a.category+(a.note?' · '+a.note:'')+' · '+when(a.date):a.kind==='billpaid'?'Bill paid: '+a.title+' · '+$(a.amount)+' · '+when(a.date):a.kind==='add'?'Add: '+a.title+' · '+when(a.date)+(a.due?' · due '+when(a.due):'')+' · '+a.priority+' priority · '+a.area:a.kind==='complete'?'Complete: '+a.title:'Move to '+when(a.date)+': '+a.title);
+  let items=actions.map(a=>a.kind==='budgetmove'?'Budget: move '+$(a.amount)+' from '+a.from+' to '+a.to:a.kind==='budgetassign'?'Budget: assign '+$(a.amount)+' to '+a.to:a.kind==='liftplan'?'Workout plan for '+a.who+': '+a.title+(a.days.length?' ('+a.days.map(d=>DN[d]).join(', ')+')':'')+' — '+a.exercises.map(e=>e.name+' '+SETS(e.sets)).join('; '):a.kind==='liftsession'?LIFT(a):a.kind==='goalnew'?'New savings goal: '+a.title+' · '+$(a.amount)+(a.date?' · by '+when(a.date):''):a.kind==='goaladd'?(a.amount>0?'Savings: +'+$(a.amount)+' → ':'Savings: −'+$(-a.amount)+' from ')+a.title+' · '+when(a.date):a.kind==='grocery'?'Grocery list: '+a.items.map(i=>(i.qty?i.qty+' ':'')+i.name).join(', '):a.kind==='fit'?'Log for '+a.who+': '+FIT(a)+' · '+when(a.date):a.kind==='mealplan'?'Meal plan: '+a.slot+' '+when(a.date)+' · '+a.note:a.kind==='txn'?(a.type==='income'?'Income: ':'Expense: ')+$(a.amount)+' · '+a.category+(a.note?' · '+a.note:'')+' · '+when(a.date):a.kind==='billpaid'?'Bill paid: '+a.title+' · '+$(a.amount)+' · '+when(a.date):a.kind==='add'?'Add: '+a.title+' · '+when(a.date)+(a.due?' · due '+when(a.due):'')+' · '+a.priority+' priority · '+a.area:a.kind==='complete'?'Complete: '+a.title:'Move to '+when(a.date)+': '+a.title);
   box.innerHTML=(reply?'<p class="hint" style="margin:0 0 8px;color:#cdeefa">🧠 '+esc(reply)+'</p>':'')+(errors.length?'<p class="hint" style="margin:0 0 8px">Skipped: '+errors.map(esc).join('; ')+'</p>':'')+'<strong>Review '+actions.length+' proposed change(s)</strong><ol>'+items.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ol><div class="actions"><button class="btn sm" onclick="applyPreview()">Confirm all changes</button><button class="btn alt sm" onclick="cancelVoicePreview()">Cancel</button></div><p class="hint">No changes occur before confirmation.</p>';
   pending={raw,actions};
 };
@@ -269,7 +281,9 @@ window.applyPreview=function(){
   for(let a of batch.actions){if((a.kind==='complete'||a.kind==='move')&&!data.tasks.some(t=>t.id===a.id&&t.status!=='done'))return toast('Task changed; interpret again.');}
   const summaries=[];
   for(let a of batch.actions){
-    if(a.kind==='liftplan'){window.Strength.createPlan({personId:a.personId,name:a.title,days:a.days,exercises:a.exercises});}
+    if(a.kind==='budgetmove'){window.Budget.move(a.month,a.from,a.to,a.amount);}
+    else if(a.kind==='budgetassign'){const cur=(data.finance.assign[a.month]||{})[a.to]||0;window.Budget.setAssign(a.month,a.to,cur+a.amount);}
+    else if(a.kind==='liftplan'){window.Strength.createPlan({personId:a.personId,name:a.title,days:a.days,exercises:a.exercises});}
     else if(a.kind==='liftsession'){summaries.push(window.Strength.saveSession(a.session));}
     else if(a.kind==='goalnew'){window.Savings.create({name:a.title,target:a.amount,deadline:a.date});}
     else if(a.kind==='goaladd'){window.Savings.contribute(a.id,a.amount,a.date);}

@@ -48,7 +48,8 @@ function metrics(){
  const curExp=f.txns.filter(t=>t.type==='expense'&&t.date.slice(0,7)===cur);
  const variable=curExp.filter(t=>!isBill(t)).reduce((a,t)=>a+t.amount,0);
  const projected=dom>=3?Math.round(m.spend+unpaidTotal+variable/dom*(N-dom)):null;
- const budget=Object.values(f.budgets).reduce((a,b)=>a+b,0);
+ const B0=window.Budget?window.Budget.budget(cur):null,asg=B0&&B0.totalAssigned?B0.assigned:f.budgets;
+ const budget=Object.values(asg).reduce((a,b)=>a+b,0);
  const lastSpend=(byMonth[addMonths(cur,-1)]||{}).spend||0;
  // cumulative daily spend: this month vs last month
  const lm=addMonths(cur,-1),NL=daysIn(lm);
@@ -57,7 +58,7 @@ function metrics(){
  // categories: this month vs 3-month average
  const cats={};for(const [c,v] of Object.entries(catBy[cur]||{}))cats[c]={now:v,avg:0};
  for(const k of prev)for(const [c,v] of Object.entries(catBy[k]||{})){(cats[c]=cats[c]||{now:0,avg:0}).avg+=v/3;}
- const catRows=Object.entries(cats).map(([c,x])=>({c,now:x.now,avg:Math.round(x.avg),budget:f.budgets[c]||0})).filter(x=>x.now>0).sort((a,b)=>b.now-a.now);
+ const catRows=Object.entries(cats).map(([c,x])=>({c,now:x.now,avg:Math.round(x.avg),budget:asg[c]||0})).filter(x=>x.now>0).sort((a,b)=>b.now-a.now);
  // bills due in the next 14 days
  const soon=[];for(const b of f.bills)for(const k of [cur,addMonths(cur,1)]){const due=`${k}-${String(Math.min(b.dueDay,daysIn(k))).padStart(2,'0')}`;const diff=Math.round((pd(due)-pd(today))/DAY);
   if(!b.paid?.[k]&&diff<=14&&(diff>=0||k===cur))soon.push({name:b.name,amount:b.amount,due,diff});}

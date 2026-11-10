@@ -10,7 +10,8 @@ A working mobile-friendly, offline-first personal task journal prototype. No ext
 - Strength tab: workout plans typed or spoken naturally ("flat bench 225 for 15, 315 for 10"), log actual sets by voice or on screen, plan-vs-actual, estimated 1RM progress / holding / decline vs last session, PRs, next-session targets, weekly volume and muscle balance
 - Savings goals (Money tab): target, deadline, add/withdraw, on-track pacing and $/month needed; set-aside money reduces Safe to spend
 - Grocery list (Fitness tab): grouped by store section, check off while shopping, build from the meal plan (full ingredient lists with Vector AI)
-- Money tab: income/expenses, bills, category budgets; Calendar with day/week task lists
+- Money tab (YNAB + Monarch style): zero-based budget with Ready to Assign, rollover, overspending, category targets, move money, Age of Money; accounts (checking, savings, cash, credit cards, loans, investments, property) with net worth history, reconcile and transfers; transactions with search, filters, splits, tags, review queue, auto-categorize rules and bank CSV import with duplicate detection; recurring/subscription detection; cash-flow (Sankey), spending trends and top payees. No live bank sync (needs a paid aggregator and a server).
+- Calendar with day/week task lists
 - Task register with area, priority, schedule, due date, next action, notes, complete/reopen
 - Today dashboard and overdue indicators
 - Morning notes and evening review with automatic carryover of open scheduled tasks

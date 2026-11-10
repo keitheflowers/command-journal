@@ -39,7 +39,7 @@ function guessCategory(text,type){
 }
 function billDue(b,month){const [y,m]=month.split('-').map(Number);const last=new Date(y,m,0).getDate();return `${month}-${String(Math.min(b.dueDay,last)).padStart(2,'0')}`;}
 function addTxn(t){
- const tx={id:uuid(),type:t.type==='income'?'income':'expense',amount:t.amount,category:t.category||guessCategory(t.note||'',t.type),date:t.date||day(),note:(t.note||'').slice(0,140),billId:t.billId||null,created:stamp()};
+ const ty=t.type==='income'?'income':'expense';const tx={id:uuid(),type:ty,amount:t.amount,category:t.category||(window.Budget?window.Budget.categorize(t.note||'',ty):guessCategory(t.note||'',t.type)),date:t.date||day(),note:(t.note||'').slice(0,140),payee:(t.note||'').slice(0,80),accountId:t.accountId||(window.Budget?window.Budget.defaultAccount():null),reviewed:true,billId:t.billId||null,created:stamp()};
  fin().txns.push(tx);log('finance_'+tx.type,null,`${money(tx.amount)} · ${tx.category}${tx.note?' · '+tx.note:''}`);
  return tx;
 }

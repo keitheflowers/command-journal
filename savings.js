@@ -75,11 +75,12 @@ function panelHtml(){
  </div>`;
 }
 function inject(){
- const sec=document.getElementById('finance');if(!sec)return;
+ const sec=document.getElementById('finance');if(!sec||(sec.dataset.sub&&sec.dataset.sub!=='budget'))return;
  const old=sec.querySelector('#sv-panel');if(old)old.remove();
  const first=sec.querySelector('.panel');if(!first)return;
  first.insertAdjacentHTML('afterend',panelHtml());
 }
+window.Savings.inject=inject;
 document.addEventListener('click',e=>{
  const b=e.target.closest('#sv-panel [data-sv]');if(!b)return;const a=b.dataset.sv,gs=list();
  if(a==='form')showForm=!showForm;
