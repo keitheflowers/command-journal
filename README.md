@@ -8,6 +8,10 @@ A working mobile-friendly, offline-first personal task journal prototype. No ext
 - Dashboard: safe-to-spend, savings rate, month-end spending pace vs budget, cash flow, spending vs your 3-month average, upcoming bills, weekly task completions and stuck tasks
 - Navigation: five tabs (Home, Plan, Money, Health, Settings) with sub-tabs
 - Health → Meals: eating patterns (3 meals, 3 + snacks, 6 small meals, 16:8, 18:6, one meal a day, custom), calorie/macro targets with a Mifflin-St Jeor calculator, food log by meal (recent foods, saved meals, common foods, USDA FoodData Central search, custom, Vector AI estimates), fasting timer with goals, streak and history, meal plan that follows the pattern, grocery list
+- Adaptive targets (Health → Meals): after ~3 weeks of food logs and weigh-ins, estimates your real maintenance from intake vs weight trend and suggests a new calorie target (max ±300/week); one tap applies it
+- Weekly recap: on Sunday/Monday Home shows last week's money, tasks, training (PRs), fitness and nutrition plus next week's bills and focus; say "how was my week"
+- Debt payoff (Money → Debt): APR and minimums per card/loan, avalanche vs snowball vs minimums with payoff date, total interest and savings from extra payments
+- First-run setup (names, family, starting balance, eating pattern, lock/backup) and plain-language Privacy and Terms pages (templates to review before commercial use)
 - Health → Training: rest timer on set completion and a plate calculator; Health → Overview: today's rings (move, protein, sleep, water), fasting and planned workout
 - Fitness (whole family): workouts, weight trend, steps, water, sleep, meals vs calorie/protein targets, and a weekly meal plan (Vector AI can fill it in)
 - Strength tab: workout plans typed or spoken naturally ("flat bench 225 for 15, 315 for 10"), log actual sets by voice or on screen, plan-vs-actual, estimated 1RM progress / holding / decline vs last session, PRs, next-session targets, weekly volume and muscle balance
@@ -42,7 +46,7 @@ A web server is needed for service workers and reliable installability. Opening 
 Tasks should eventually sync via an authenticated versioned API that supports unique IDs, append-only event history, per-user namespaces, explicit conflict handling, encrypted storage, and audited AI actions. Avoid embedding an AI provider in the journal's business logic.
 
 ## Tests
-Browser tests cover every area: tabs, tasks and dates, calendar, hands-free voice, money (budget, accounts, CSV import, rules, splits, recurring, reports, voice), fitness, grocery, savings, strength (parser, progress, programs), backups, app lock (PIN + fingerprint) and Vector AI (mocked API).
+Browser tests cover every area: adaptive targets, weekly recap, debt payoff, first-run setup, tabs, tasks and dates, calendar, hands-free voice, money (budget, accounts, CSV import, rules, splits, recurring, reports, voice), fitness, grocery, savings, strength (parser, progress, programs), backups, app lock (PIN + fingerprint) and Vector AI (mocked API).
 
 ```
 npm install

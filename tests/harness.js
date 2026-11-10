@@ -54,10 +54,11 @@ async function open(opts = {}) {
       route.fulfill({ status: r.status || 200, contentType: 'application/json', body: JSON.stringify(payload) });
     });
   }
-  await page.addInitScript(({ data, local, speech, ai }) => {
+  await page.addInitScript(({ data, local, speech, ai, onboard }) => {
     if (sessionStorage.getItem('__seeded')) return; // keep state across reloads
     sessionStorage.setItem('__seeded', '1');
     localStorage.setItem('command_journal_v1', JSON.stringify(data));
+    if (!onboard) localStorage.setItem('onboardDone', '1'); // skip first-run setup unless a test wants it
     for (const [k, v] of Object.entries(local || {})) localStorage.setItem(k, v);
     if (ai) { localStorage.setItem('vectorAiKey', 'sk-ant-test'); localStorage.setItem('vectorAiOn', '1'); }
     try { Object.defineProperty(navigator, 'canShare', { value: undefined, configurable: true }); } catch (_) {}
@@ -69,7 +70,7 @@ async function open(opts = {}) {
       let n = 0;
       window.__final = t => { const res = []; for (let i = 0; i <= n; i++) { const x = [{ transcript: i === n ? t : 'old' }]; x.isFinal = true; res.push(x); } n++; window.__rec.onresult({ results: res }); };
     }
-  }, { data: opts.data || empty(), local: opts.local, speech: !!opts.speech, ai: !!opts.ai });
+  }, { data: opts.data || empty(), local: opts.local, speech: !!opts.speech, ai: !!opts.ai, onboard: !!opts.onboard });
   await page.goto(server.url);
   await page.waitForTimeout(400);
   const app = {

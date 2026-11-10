@@ -319,6 +319,51 @@ function reportsView(){
  html+=`<div class="panel"><h2>Top payees</h2>${P.length?`<div class="st-bars">${P.map(([n,v])=>`<div class="r"><div class="top"><span>${esc(n)}</span><span style="font-variant-numeric:tabular-nums">${$(v,{whole:true})}</span></div><div class="tr"><i style="width:${v/pm*100}%"></i></div></div>`).join('')}</div>`:'<div class="empty">No spending this month.</div>'}</div>`;
  return html;
 }
+// ---- debt payoff: snowball (smallest balance first) vs avalanche (highest rate first)
+let extraPay=null;
+function simulate(debts,extra,strategy,rollover=true){
+ let D=debts.map(d=>({...d})),month=0,interest=0;const order=[],series=[D.reduce((a,d)=>a+d.bal,0)];
+ while(D.some(d=>d.bal>0.5)&&month<600){
+  month++;let pool=extra;
+  for(const d of D)if(d.bal>0){const i=d.bal*d.apr/100/12;d.bal+=i;interest+=i;}
+  for(const d of D){if(d.bal>0){const p=Math.min(d.bal,d.min);d.bal-=p;}else if(rollover)pool+=d.min;} // paid-off minimums roll into the pool
+  const live=D.filter(d=>d.bal>0.5).sort(strategy==='avalanche'?(a,b)=>b.apr-a.apr||a.bal-b.bal:(a,b)=>a.bal-b.bal||b.apr-a.apr);
+  for(const d of live){if(pool<=0)break;const p=Math.min(d.bal,pool);d.bal-=p;pool-=p;}
+  for(const d of D)if(d.bal<=0.5&&!order.some(o=>o.id===d.id)){d.bal=0;order.push({id:d.id,name:d.name,month});}
+  series.push(D.reduce((a,d)=>a+Math.max(0,d.bal),0));
+ }
+ return {months:D.some(d=>d.bal>0.5)?null:month,interest:Math.round(interest),order,series};
+}
+function debtList(){const f=F();return f.accounts.filter(a=>!a.closed&&balance(a)<0).map(a=>({id:a.id,name:a.name,bal:-balance(a)/100,apr:a.apr!=null?a.apr:(a.type==='credit'?22:7),min:a.minPay!=null?a.minPay/100:Math.max(25,Math.round(-balance(a)/100*(a.type==='credit'?0.02:0.015)))}));}
+function debtView(){
+ const debts=debtList();
+ if(!debts.length)return `<div class="panel"><h2>Debt payoff</h2><div class="empty">No debts. 🎉 Add credit cards or loans in Accounts, with what you owe, and they’ll show up here.</div></div>`;
+ const extra=extraPay!=null?extraPay:200,base=simulate(debts,0,'avalanche',false),sb=simulate(debts,extra,'snowball'),av=simulate(debts,extra,'avalanche');
+ const when=m=>{if(m==null)return 'never at this rate';const d=new Date();d.setMonth(d.getMonth()+m);return d.toLocaleDateString(undefined,{month:'short',year:'numeric'});};
+ const yrs=m=>m==null?'':m<12?`${m} mo`:`${Math.floor(m/12)} yr ${m%12} mo`;
+ const total=debts.reduce((a,d)=>a+d.bal,0),minSum=debts.reduce((a,d)=>a+d.min,0),bad=debts.filter(d=>d.min<=d.bal*d.apr/100/12);
+ const best=av.interest<=sb.interest?'avalanche':'snowball',plan=best==='avalanche'?av:sb;
+ const W=Math.max(280,(document.getElementById('finance').clientWidth||360)-36),H=160,L=46,R=10,T=12,B=20,pw=W-L-R,ph=H-T-B;
+ const n=Math.max(sb.series.length,av.series.length),y=v=>T+ph-Math.min(v,total)/total*ph,x=i=>L+i/Math.max(1,n-1)*pw;
+ const line=(arr,col,w,dash)=>`<path d="${arr.slice(0,n).map((v,i)=>`${i?'L':'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join('')}" fill="none" stroke="${col}" stroke-width="${w}" ${dash?`stroke-dasharray="${dash}"`:''} stroke-linejoin="round"/>`;
+ let svg=`<line x1="${L}" x2="${W-R}" y1="${y(0)}" y2="${y(0)}" stroke="${C.axis}"/><text x="${L-5}" y="${y(total)+4}" text-anchor="end" class="tk">${$(total*100,{compact:true,whole:true})}</text><text x="${L-5}" y="${y(0)+4}" text-anchor="end" class="tk">$0</text><text x="${L}" y="${H-4}" class="tk">now</text><text x="${W-R}" y="${H-4}" text-anchor="end" class="tk">${yrs(n-1)}</text>`;
+ svg+=line(base.series,C.muted,1.5,'4 4')+line(sb.series,'#d95926',2)+line(av.series,C.s1,2);
+ const saved=base.months!=null?Math.max(0,base.interest-plan.interest):null;
+ return `<div class="panel" style="position:relative"><h2>Debt payoff</h2><p class="hint" style="margin:0 0 8px">${$(total*100,{whole:true})} across ${debts.length} debt${debts.length>1?'s':''} · minimums ${$(minSum*100,{whole:true})}/mo</p>
+  <label>Extra you can pay each month, on top of minimums</label><input id="dbExtra" inputmode="decimal" value="${extra}">
+  <div class="dz-tiles" style="margin-top:10px">
+   <div class="dz-tile"><div class="l">🏔️ Avalanche · highest rate first</div><div class="v" style="font-size:18px">${when(av.months)}</div><div class="d">${yrs(av.months)} · interest ${$(av.interest*100,{whole:true})}</div></div>
+   <div class="dz-tile"><div class="l">⛄ Snowball · smallest balance first</div><div class="v" style="font-size:18px">${when(sb.months)}</div><div class="d">${yrs(sb.months)} · interest ${$(sb.interest*100,{whole:true})}</div></div></div>
+  <p class="hint" style="margin:10px 0 0">${base.months!=null?`Minimums only: debt-free ${when(base.months)}, ${$(base.interest*100,{whole:true})} in interest. Paying ${$(extra*100,{whole:true})} extra saves <b>${$(saved*100,{whole:true})}</b> and <b>${yrs(base.months-(plan.months||0))}</b>. `:'Minimums alone never pay this off. '}${best==='avalanche'?(sb.interest>av.interest?`Avalanche saves ${$((sb.interest-av.interest)*100,{whole:true})} more. Snowball gives quicker wins if motivation matters more.`:'Both strategies cost the same here.'):'Snowball comes out ahead here.'}</p>
+  ${bad.length?`<p class="hint" style="color:${C.bad}">⛔ ${bad.map(d=>esc(d.name)).join(', ')}: the minimum doesn’t cover the monthly interest, so the balance grows. Raise the payment.</p>`:''}
+  <div class="dz-legend" style="margin-top:10px"><span><i style="background:${C.s1};height:2px;width:14px"></i>Avalanche</span><span><i style="background:#d95926;height:2px;width:14px"></i>Snowball</span><span><i style="background:${C.muted};height:2px;width:14px"></i>Minimums only</span></div>
+  <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Total debt over time by strategy">${svg}</svg></div>
+ <div class="panel"><h2>Payoff order · ${best}</h2>${plan.order.map((o,i)=>`<div class="ac"><div class="g"><div class="t">${i+1}. ${esc(o.name)}</div><div class="s">paid off ${when(o.month)}</div></div></div>`).join('')}</div>
+ <div class="panel"><h2>Your debts</h2><p class="hint" style="margin:0 0 6px">Set each debt’s interest rate and minimum payment from your statement.</p>
+  ${debts.map(d=>`<div class="ac" style="flex-wrap:wrap"><div class="g"><div class="t">${esc(d.name)}</div><div class="s">${$(d.bal*100)} owed</div></div><label style="margin:0;font-size:11px">APR %<input class="db-apr" data-id="${d.id}" inputmode="decimal" value="${d.apr}" style="width:70px;padding:6px"></label><label style="margin:0;font-size:11px">Min $<input class="db-min" data-id="${d.id}" inputmode="decimal" value="${d.min}" style="width:80px;padding:6px"></label></div>`).join('')}</div>`;
+}
+window.Budget.debtPlan=(extra,strategy,rollover=true)=>simulate(debtList(),extra,strategy,rollover);
+
 function recurringView(){
  const R=recurring(),f=F(),subs=R.filter(r=>r.sub),mo=R.reduce((s,r)=>s+r.amount,0);
  const today=day(),in30=day(new Date(pd(today).getTime()+30*864e5));
@@ -330,10 +375,10 @@ function recurringView(){
 }
 function renderMoney(){
  const sec=document.getElementById('finance');if(!sec)return;F();
- const tabs=[['budget','Budget'],['tx','Transactions'],['accounts','Accounts'],['reports','Reports'],['recurring','Recurring']];
+ const tabs=[['budget','Budget'],['tx','Transactions'],['accounts','Accounts'],['debt','Debt'],['reports','Reports'],['recurring','Recurring']];
  const nav=`<div class="mn-tabs">${tabs.map(([k,l])=>`<button data-sub="${k}" class="${sub===k?'on':''}">${l}</button>`).join('')}</div>`;
  sec.dataset.sub=sub;
- sec.innerHTML=nav+(sub==='budget'?budgetView():sub==='tx'?txView():sub==='accounts'?accountsView():sub==='reports'?reportsView():recurringView());
+ sec.innerHTML=nav+(sub==='budget'?budgetView():sub==='tx'?txView():sub==='accounts'?accountsView():sub==='debt'?debtView():sub==='reports'?reportsView():recurringView());
  if(sub==='budget'&&window.Savings&&window.Savings.inject)window.Savings.inject(); // savings goals sit under Ready to Assign
  sec.querySelectorAll('[data-tip]').forEach(el=>{const card=el.closest('.panel');const show=()=>{let t=card.querySelector('.mn-tip');if(!t){t=document.createElement('div');t.className='mn-tip';card.appendChild(t);}t.textContent=el.dataset.tip;t.style.opacity=1;const r=el.getBoundingClientRect(),cr=card.getBoundingClientRect();t.style.left=Math.max(6,Math.min(cr.width-t.offsetWidth-6,r.left-cr.left+r.width/2-t.offsetWidth/2))+'px';t.style.top=Math.max(4,r.top-cr.top-t.offsetHeight-6)+'px';};el.addEventListener('pointerenter',show);el.addEventListener('click',show);el.addEventListener('pointerleave',()=>{const t=card.querySelector('.mn-tip');if(t)t.style.opacity=0;});});
 }
@@ -345,6 +390,8 @@ document.addEventListener('change',e=>{
  if(id==='txAcct'){fAcct=e.target.value;renderMoney();}else if(id==='txCat'){fCat=e.target.value;renderMoney();}else if(id==='txRev'){fReview=e.target.checked;renderMoney();}
  else if(id==='csvFile'){const file=e.target.files[0];if(!file)return;file.text().then(t=>{const rows=parseCSV(t);if(rows.length<2){toast('That file has no rows.');return;}csv={rows,map:detect(rows),flip:false};renderMoney();});}
  else if(['cvDate','cvPayee','cvAmt','cvDeb','cvCred','cvAcct','cvFlip'].includes(id)&&csv){csv.map={date:+document.getElementById('cvDate').value,payee:+document.getElementById('cvPayee').value,amount:+document.getElementById('cvAmt').value,debit:+document.getElementById('cvDeb').value,credit:+document.getElementById('cvCred').value};csv.acct=document.getElementById('cvAcct').value;csv.flip=document.getElementById('cvFlip').checked;renderMoney();}
+ else if(id==='dbExtra'){extraPay=Math.max(0,parseFloat(e.target.value)||0);renderMoney();}
+ else if(e.target.classList.contains('db-apr')||e.target.classList.contains('db-min')){const a=acct(e.target.dataset.id),v=parseFloat(e.target.value);if(!(v>=0))return;if(e.target.classList.contains('db-apr'))a.apr=v;else a.minPay=Math.round(v*100);persist();}
  else if(id==='anType'){const t=TYPES[e.target.value];const on=document.getElementById('anOn');if(on)on.checked=t[1];}
 });
 document.addEventListener('input',e=>{if(e.target.id==='txQ'){q=e.target.value;clearTimeout(window.__txq);window.__txq=setTimeout(()=>{const pos=e.target.selectionStart;renderMoney();const el=document.getElementById('txQ');if(el){el.focus();el.setSelectionRange(pos,pos);}},250);}});

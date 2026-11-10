@@ -274,6 +274,8 @@ window.interpretCommand=async function(){
   let raw=document.getElementById('command').value.trim();if(!raw)return toast('Speak or type an update.');
   pending=null;window.lastVectorReply='';
   let box=document.getElementById('commandPreview');box.classList.remove('hidden');
+  if(window.Recap&&/(?:weekly|week'?s?|sunday)\s+(?:recap|summary|review|report)|how (?:was|did) (?:my|our|the) week|recap (?:of )?(?:my|our|the) week/i.test(raw)){
+    const t=window.Recap.text();window.lastVectorReply=t;box.innerHTML=window.Recap.html(false);return;}
   let result=null,usedAI=false,my=++seq;
   if(window.VectorAI&&window.VectorAI.enabled()&&navigator.onLine!==false){
     box.innerHTML='<strong>🧠 Vector is thinking…</strong>';

@@ -83,7 +83,30 @@ function mealLogged(e){
  setTimeout(()=>{try{toast(`Fast ended at ${t.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}: ${h.toFixed(1)} h${h>=x.goal?' 🎉 goal reached':''}`);}catch(_){}},50);
 }
 function timing(pid,days=7){const out=[];for(let i=days-1;i>=0;i--){const d=addDays(day(),-i);const ts=mealsOn(pid,d).map(l=>({m:hmToMin(eatenAt(l)),l})).filter(x=>x.m!=null).sort((a,b)=>a.m-b.m);out.push({d,ts});}return out;}
-window.Nutrition={mealLogged,timing,eatenAt,slotTarget,eatingWindow,PATTERNS,FOODS,calcTargets,slotForNow,startFast,endFast,activeFast,fastStats,setPlan,plannedMeals,totals,mealsOn,N:pid=>N(person(pid)),addFood};
+// ---- adaptive targets: real maintenance from what you ate vs how your weight moved
+// Needs 10+ logged days and 4+ weigh-ins spread over 10+ days in the last 3 weeks.
+// maintenance ≈ average intake − (weight trend lb/day × 3,500). Changes are capped at ±300 cal a week.
+function checkIn(pid){
+ const P=person(pid),n=N(P),f=FT(),end=addDays(day(),-1),start=addDays(day(),-21);
+ const daysLogged=[];for(let d=start;d<=end;d=addDays(d,1)){const cal=totals(mealsOn(pid,d)).cal;if(cal>=800)daysLogged.push(cal);}
+ const W=f.logs.filter(l=>l.kind==='weight'&&l.personId===pid&&l.date>=start&&l.date<=day()).map(l=>({x:(pd(l.date)-pd(start))/864e5,y:+l.value})).sort((a,b)=>a.x-b.x);
+ const span=W.length?W[W.length-1].x-W[0].x:0,need={days:Math.max(0,10-daysLogged.length),weighs:Math.max(0,4-W.length),span:span<10};
+ const ready=!need.days&&!need.weighs&&!need.span;
+ const last=(n.checkins||[]).slice(-1)[0],due=!last||(pd(day())-pd(last.date))/864e5>=7;
+ if(!ready)return {ready,due,need,logged:daysLogged.length,weighs:W.length};
+ const mx=W.reduce((a,p)=>a+p.x,0)/W.length,my=W.reduce((a,p)=>a+p.y,0)/W.length;
+ const slope=W.reduce((a,p)=>a+(p.x-mx)*(p.y-my),0)/Math.max(1e-9,W.reduce((a,p)=>a+(p.x-mx)**2,0)); // lb per day
+ const avg=daysLogged.reduce((a,b)=>a+b,0)/daysLogged.length,tdee=Math.round(avg-slope*3500);
+ const goal=(n.profile&&n.profile.goal!=null)?+n.profile.goal:0,cur=(n.targets||{}).cal||tdee+goal;
+ const floor=(n.profile&&n.profile.sex)==='female'?1200:1500;
+ let sug=Math.round((tdee+goal)/10)*10;const capped=Math.abs(sug-cur)>300;sug=Math.max(floor,Math.min(cur+300,Math.max(cur-300,sug)));
+ return {ready,due,avg:Math.round(avg),slopeWk:Math.round(slope*7*100)/100,tdee,goal,current:cur,suggested:sug,capped,logged:daysLogged.length,weighs:W.length};
+}
+function applyCheckIn(pid,r){const n=N(person(pid)),t=n.targets||{},p=t.p||Math.round((n.profile&&n.profile.weightLb||180)*0.8),fat=Math.round(r.suggested*0.28/9);
+ n.targets={cal:r.suggested,p,f:fat,c:Math.max(0,Math.round((r.suggested-p*4-fat*9)/4))};(n.checkins=n.checkins||[]).push({date:day(),tdee:r.tdee,avg:r.avg,slopeWk:r.slopeWk,from:r.current,to:r.suggested});
+ person(pid).goals={...person(pid).goals,calories:n.targets.cal,protein:p};}
+function skipCheckIn(pid,r){const n=N(person(pid));(n.checkins=n.checkins||[]).push({date:day(),tdee:r.tdee,avg:r.avg,slopeWk:r.slopeWk,from:r.current,to:r.current,kept:true});}
+window.Nutrition={checkIn,applyCheckIn,mealLogged,timing,eatenAt,slotTarget,eatingWindow,PATTERNS,FOODS,calcTargets,slotForNow,startFast,endFast,activeFast,fastStats,setPlan,plannedMeals,totals,mealsOn,N:pid=>N(person(pid)),addFood};
 
 // ---- view ---------------------------------------------------------------
 let dayView=day(),adding=null,addTab='recent',showTargets=false,showPattern=false,planWeek=0,usdaRes=null,estimate=null,tick=null;
@@ -116,6 +139,19 @@ function fastCard(pid){
 }
 function statsLine(st){return st.list.length?`<p class="hint" style="margin:10px 0 0">${st.streak?`🔥 ${st.streak} goal${st.streak>1?'s':''} in a row · `:''}last 7 days: ${st.done7}/${st.count7} fasts reached goal${st.avg7?` · avg ${st.avg7.toFixed(1)}h`:''}</p><div style="display:flex;gap:4px;align-items:flex-end;height:44px;margin-top:6px" aria-label="Recent fasts">${st.list.slice(0,10).reverse().map(x=>{const h=(new Date(x.end)-new Date(x.start))/36e5;return `<div title="${h.toFixed(1)}h of ${x.goal}h" style="flex:1;height:${Math.min(100,h/Math.max(x.goal,1)*100)}%;min-height:3px;border-radius:3px 3px 0 0;background:${h>=x.goal?C.good:C.s1}"></div>`;}).join('')}</div>`:'';}
 function ago(iso){const m=Math.round((Date.now()-new Date(iso))/60000);return m<60?m+' min ago':m<1440?Math.round(m/60)+' h ago':Math.round(m/1440)+' days ago';}
+function checkInCard(pid){
+ const r=checkIn(pid),n=N(person(pid));
+ if(!r.ready){const parts=[];if(r.need.days)parts.push(`log food on ${r.need.days} more day${r.need.days>1?'s':''}`);if(r.need.weighs)parts.push(`weigh in ${r.need.weighs} more time${r.need.weighs>1?'s':''}`);if(!parts.length&&r.need.span)parts.push('keep weighing in over a few more days');
+  return `<div class="panel"><h2>📈 Adaptive targets</h2><p class="hint" style="margin:0">Each week Vector compares what you ate with your weight trend to find your real maintenance calories, then suggests targets. To unlock it, ${parts.join(' and ')}. So far: ${r.logged}/10 days logged, ${r.weighs}/4 weigh-ins in the last 3 weeks.</p></div>`;}
+ const dir=r.slopeWk<-0.05?`losing ${Math.abs(r.slopeWk).toFixed(2)} lb/week`:r.slopeWk>0.05?`gaining ${r.slopeWk.toFixed(2)} lb/week`:'holding steady';
+ const goalTxt=r.goal<0?`lose ~${Math.abs(r.goal/500).toFixed(1).replace('.0','')} lb/week`:r.goal>0?`gain ~${(r.goal/500).toFixed(1).replace('.0','')} lb/week`:'maintain';
+ const last=(n.checkins||[]).slice(-1)[0];
+ return `<div class="panel"><div class="header"><h2>📈 Weekly check-in</h2>${r.due?'<span class="chip rev">due</span>':`<span class="muted small">last ${pd(last.date).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</span>`}</div>
+  <div class="dz-tiles"><div class="dz-tile"><div class="l">Avg intake (${r.logged} days)</div><div class="v" style="font-size:19px">${r.avg.toLocaleString()} cal</div></div><div class="dz-tile"><div class="l">Weight trend</div><div class="v" style="font-size:19px">${r.slopeWk>0?'+':''}${r.slopeWk} lb/wk</div></div>
+  <div class="dz-tile"><div class="l">Your real maintenance</div><div class="v" style="font-size:19px">${r.tdee.toLocaleString()} cal</div><div class="d">estimated from your data</div></div><div class="dz-tile"><div class="l">Suggested target</div><div class="v" style="font-size:19px;color:${C.cyan}">${r.suggested.toLocaleString()} cal</div><div class="d">now ${r.current.toLocaleString()}</div></div></div>
+  <p class="hint" style="margin:8px 0 0">You’re ${dir} eating about ${r.avg.toLocaleString()} a day. To ${goalTxt}, aim for ${r.suggested.toLocaleString()}.${r.capped?' Capped at 300 cal of change per week so adjustments stay gradual.':''} Protein stays the same, fat ~28%, carbs fill the rest.</p>
+  ${r.due&&r.suggested!==r.current?`<div class="actions" style="margin-top:10px"><button class="btn sm" data-nu="applyci">Use ${r.suggested.toLocaleString()} cal</button><button class="btn alt sm" data-nu="keepci">Keep current</button></div>`:r.due?`<div class="actions" style="margin-top:10px"><button class="btn alt sm" data-nu="keepci">✓ Targets look right</button></div>`:''}</div>`;
+}
 function macroCard(pid){
  const n=N(person(pid)),t=n.targets||{},tot=totals(mealsOn(pid,dayView));
  const cell=(v,tg,l,u='')=>{const pct=tg?v/tg:0;return `<div class="nu-m"><div class="v">${r0(v)}${u}</div><div class="l">${l}${tg?` / ${tg}${u}`:''}</div>${tg?`<div class="bar"><i class="${pct>1.05?'over':''}" style="width:${Math.min(100,pct*100)}%"></i></div>`:''}</div>`;};
@@ -198,7 +234,7 @@ function timingCard(pid){
 function render2(){
  if(!window.Fitness)return;const people=FT().people,pid=sel();
  const chips=`<div class="panel"><div class="ft-chips">${people.map(p=>`<button class="ft-chip${p.id===pid?' on':''}" data-nu="who" data-id="${p.id}">${esc(p.name)}</button>`).join('')}</div></div>`;
- section.innerHTML=chips+macroCard(pid)+fastCard(pid)+logCard(pid)+timingCard(pid)+planCard(pid);
+ section.innerHTML=chips+macroCard(pid)+checkInCard(pid)+fastCard(pid)+logCard(pid)+timingCard(pid)+planCard(pid);
  if(window.Grocery&&window.Grocery.inject)window.Grocery.inject();
  clearInterval(tick);if(activeFast(pid))tick=setInterval(()=>{if(view!=='meals'||document.hidden)return;const a=activeFast(pid);if(!a)return clearInterval(tick);const ms=Date.now()-new Date(a.start),el=document.getElementById('faT');if(el)el.textContent=fmtH(ms);},30000);
 }
@@ -216,6 +252,8 @@ section.addEventListener('click',async e=>{
  else if(a==='splitmode'){n.split={mode:b.dataset.v,pct:n.split&&n.split.pct||Object.fromEntries(n.slots.map(sl=>[sl.id,Math.round(100/n.slots.length)]))};}
  else if(a==='savetargets'){const pc=[...section.querySelectorAll('.nu-pct')];if(pc.length){const pct=Object.fromEntries(pc.map(i=>[i.dataset.s,Math.max(0,+i.value||0)]));const sum=Object.values(pct).reduce((x,y)=>x+y,0);if(Math.abs(sum-100)>1){toast(`Meal percentages add up to ${sum}%. Make them 100%.`);return;}n.split={mode:'custom',pct};}
   n.targets={cal:num('tgCal'),p:num('tgP'),c:num('tgC'),f:num('tgF')};P.goals={...P.goals,calories:n.targets.cal,protein:n.targets.p};showTargets=false;toast('Targets saved.');}
+ else if(a==='applyci'){const r=checkIn(pid);applyCheckIn(pid,r);toast(`Targets updated: ${r.suggested} cal.`);}
+ else if(a==='keepci'){skipCheckIn(pid,checkIn(pid));toast('Kept your targets. Next check-in in a week.');}
  else if(a==='calc'){const pr={sex:document.getElementById('pfSex').value,age:num('pfAge'),heightIn:(num('pfFt')||0)*12+(num('pfIn')||0),weightLb:num('pfWt'),activity:+document.getElementById('pfAct').value,goal:+document.getElementById('pfGoal').value,proteinPerLb:+document.getElementById('pfPro').value};
   if(!pr.age||!pr.heightIn||!pr.weightLb){toast('Enter age, height and weight.');return;}const r=calcTargets(pr);n.profile=pr;n.targets={cal:r.cal,p:r.p,c:r.c,f:r.f};P.goals={...P.goals,calories:r.cal,protein:r.p};showTargets=false;
   toast(`${r.cal} cal · ${r.p}P ${r.c}C ${r.f}F (maintenance ≈ ${r.tdee})${r.low?' · raised to a safe minimum':''}`);}
