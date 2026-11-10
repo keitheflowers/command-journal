@@ -177,7 +177,8 @@ function budgetView(){
   <div class="rta ${B.rta<0?'neg':B.rta===0?'zero':''}"><div class="v">${$(B.rta)}</div><div class="l">${B.rta>0?'Ready to Assign: give every dollar a job':B.rta<0?'Assigned more than you have. Take it back from a category.':'All money assigned 🎯'}</div></div>
   <div class="dz-tiles" style="margin-top:10px"><div class="dz-tile"><div class="l">Assigned this month</div><div class="v">${$(B.totalAssigned,{whole:true})}</div></div><div class="dz-tile"><div class="l">Spent this month</div><div class="v">${$(B.totalSpent,{whole:true})}</div></div>
   <div class="dz-tile"><div class="l">Targets still need</div><div class="v ${under?'dz-warn':''}">${$(under,{whole:true})}</div></div><div class="dz-tile"><div class="l">Age of Money</div><div class="v">${age==null?'—':age+' days'}</div><div class="d">how long money sits before you spend it</div></div></div>
-  <div class="actions" style="margin-top:12px"><button class="btn sm" data-b="fund">Fund targets</button><button class="btn alt sm" data-b="last">Assign last month’s spending</button><button class="btn alt sm" data-b="clear">Clear month</button></div>
+  <div class="actions" style="margin-top:12px"><button class="btn sm" data-b="income">+ Add income</button><button class="btn alt sm" data-b="spend">+ Add spending</button></div>
+  <div class="actions" style="margin-top:8px"><button class="btn sm" data-b="fund">Fund targets</button><button class="btn alt sm" data-b="last">Assign last month’s spending</button><button class="btn alt sm" data-b="clear">Clear month</button></div>
   ${over.length?`<p class="hint" style="color:${C.bad};margin:10px 0 0">⛔ Overspent: ${over.map(esc).join(', ')}. Move money in to cover it, or it comes out of next month.</p>`:''}</div>
  <div class="panel"><h2>Categories</h2><div class="bg-hdr"><span>Category</span><span>Assigned</span><span>Available</span></div>`;
  for(const [g,cs] of groups()){
@@ -214,7 +215,7 @@ function txView(){
  if(q){const qq=q.toLowerCase();L=L.filter(t=>(t.payee||'').toLowerCase().includes(qq)||(t.memo||'').toLowerCase().includes(qq)||(t.category||'').toLowerCase().includes(qq)||String(t.amount/100).includes(qq)||(t.tags||[]).some(x=>x.includes(qq)));}
  const unrev=f.txns.filter(t=>!t.reviewed).length;
  let html=`<div class="panel"><div class="actions"><button class="btn sm" data-t="new">+ Transaction</button><button class="btn alt sm" data-t="xfer">⇄ Transfer</button><button class="btn alt sm" data-t="import">⬆ Import CSV</button></div>
-  ${form==='new'||form==='xfer'?formHtml():''}${csv?csvHtml():''}
+  ${(form&&typeof form==='object')||form==='xfer'?formHtml():''}${csv?csvHtml():''}
   <input id="txQ" placeholder="Search payee, memo, category, amount…" value="${esc(q)}" style="margin-top:12px">
   <div class="two" style="margin-top:8px"><div>${sel('txAcct',[['','All accounts'],...acctOpts()],fAcct)}</div><div>${sel('txCat',[['','All categories'],...catOpts('expense'),...catOpts('income')],fCat)}</div></div>
   <label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" class="check" id="txRev" ${fReview?'checked':''}> Needs review only${unrev?` <span class="chip rev">${unrev}</span>`:''}</label>
@@ -349,6 +350,7 @@ document.addEventListener('click',e=>{
  if(b.dataset.sub){sub=b.dataset.sub;try{localStorage.setItem('moneySub',sub);}catch(_){}form=null;csv=null;openTx=null;renderMoney();window.scrollTo({top:0});return;}
  if(b.dataset.m){month=b.dataset.m==='prev'?addM(month,-1):b.dataset.m==='next'?addM(month,1):day().slice(0,7);openCat=null;renderMoney();return;}
  const B=b.dataset.b,T=b.dataset.t,A=b.dataset.a,R=b.dataset.r;
+ if(B==='income'||B==='spend'){sub='tx';try{localStorage.setItem('moneySub',sub);}catch(_){}form={dir:B==='income'?'income':'expense'};csv=null;openTx=null;renderMoney();window.scrollTo({top:0});setTimeout(()=>document.getElementById('ntPayee')?.focus(),50);return;}
  if(B==='cat'){openCat=openCat===b.dataset.c?null:b.dataset.c;renderMoney();return;}
  if(B==='savetarget'){const type=document.getElementById('tgType').value,amt=cents(document.getElementById('tgAmt').value),date=document.getElementById('tgDate').value;const c=b.dataset.c;
   if(!type)delete f.targets[c];else{if(!(amt>0)){toast('Enter a target amount.');return;}if(type==='bydate'&&!date){toast('Pick the date to reach it by.');return;}f.targets[c]={type,amount:amt,date:type==='bydate'?date:null};}toast('Target saved.');}
