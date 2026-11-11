@@ -38,15 +38,18 @@ function guessCategory(text,type){
  return type==='income'?'Other income':'Other';
 }
 function billDue(b,month){const [y,m]=month.split('-').map(Number);const last=new Date(y,m,0).getDate();return `${month}-${String(Math.min(b.dueDay,last)).padStart(2,'0')}`;}
+// whose phone this is: new entries are marked as theirs ("who spent it")
+function me(){let v=null;try{v=localStorage.getItem('fsMe');}catch(_){}const P=window.Fitness?window.Fitness.people():[];if(v==='none')return null;if(v&&P.some(p=>p.id===v))return v;return P.length?P[0].id:null;}
+function setMe(id){try{localStorage.setItem('fsMe',id||'none');}catch(_){}}
 function addTxn(t){
- const ty=t.type==='income'?'income':'expense';const tx={id:uuid(),type:ty,amount:t.amount,category:t.category||(window.Budget?window.Budget.categorize(t.note||'',ty):guessCategory(t.note||'',t.type)),date:t.date||day(),note:(t.note||'').slice(0,140),payee:(t.note||'').slice(0,80),accountId:t.accountId||(window.Budget?window.Budget.defaultAccount():null),reviewed:true,billId:t.billId||null,created:stamp()};
+ const ty=t.type==='income'?'income':'expense';const tx={id:uuid(),type:ty,amount:t.amount,category:t.category||(window.Budget?window.Budget.categorize(t.note||'',ty):guessCategory(t.note||'',t.type)),date:t.date||day(),note:(t.note||'').slice(0,140),payee:(t.note||'').slice(0,80),accountId:t.accountId||(window.Budget?window.Budget.defaultAccount():null),who:t.who!==undefined?t.who:me(),reviewed:true,billId:t.billId||null,created:stamp()};
  fin().txns.push(tx);log('finance_'+tx.type,null,`${money(tx.amount)} · ${tx.category}${tx.note?' · '+tx.note:''}`);
  return tx;
 }
-function markBillPaid(id,date,amount){
+function markBillPaid(id,date,amount,who){
  const b=fin().bills.find(x=>x.id===id);if(!b)return false;
  const month=monthOf(date||day());if(b.paid?.[month])return false;
- const tx=addTxn({type:'expense',amount:amount||b.amount,category:b.category,note:b.name,date:date||day(),billId:b.id});
+ const tx=addTxn({type:'expense',amount:amount||b.amount,category:b.category,note:b.name,date:date||day(),billId:b.id,...(who?{who}:{})});
  b.paid=b.paid||{};b.paid[month]=tx.id;return true;
 }
 function findBill(text){
@@ -62,7 +65,7 @@ function summary(m){
   bills:f.bills.map(b=>({id:b.id,name:b.name,amount:b.amount,dueDay:b.dueDay,category:b.category,paidThisMonth:!!b.paid?.[m]})),
   recent:f.txns.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,15).map(t=>({date:t.date,type:t.type,amount:t.amount,category:t.category,note:t.note}))};
 }
-window.Finance={EXPENSE,INCOME,summary,addTxn,markBillPaid,findBill,guessCategory,money,
+window.Finance={me,setMe,EXPENSE,INCOME,summary,addTxn,markBillPaid,findBill,guessCategory,money,
  billsDueOn:date=>fin().bills.filter(b=>billDue(b,monthOf(date))===date).map(b=>({name:b.name,amount:b.amount,paid:!!b.paid?.[monthOf(date)]}))};
 
 // ---- view -------------------------------------------------------------

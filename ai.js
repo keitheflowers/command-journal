@@ -19,7 +19,7 @@ Rules:
 - One request can contain several changes ("add X and Y, and I spent 20 on lunch" = three actions).
 - Dates are YYYY-MM-DD, resolved against TODAY in the context. "Friday" means the next Friday after today; "next Friday" means the Friday of next week. Tasks default to today when no date is given; money entries default to today.
 - To complete or move an existing task, use its exact task_id from OPEN TASKS. If no task clearly matches, do not guess: leave it out and ask in "reply" which one they meant.
-- To mark a bill paid, use its bill_id from BILLS. For other spending use kind "txn".
+- To mark a bill paid, use its bill_id from BILLS. For other spending use kind "txn". For txn and bill_paid, set person to the family member (from PEOPLE) who spent or earned it when the user names someone ("Sam spent 40 at Target"); otherwise null.
 - Amounts are dollars as numbers (e.g. 45.5). Pick category and area only from the allowed lists.
 - Keep task titles short and in the user's words, without dates or priority words.
 - "reply" is read aloud: one or two short, plain sentences. If you proposed changes, reply can be empty. If the user asked a question (what's due, how much did I spend), answer it from the context in "reply" and propose no actions.
@@ -68,6 +68,7 @@ function context(){
  if(window.Strength&&window.Fitness){ctx.STRENGTH_PLANS=window.Fitness.people().flatMap(p=>window.Strength.plans(p.id).map(pl=>({person:p.name,name:pl.name,weekdays:pl.days,exercises:pl.exercises.map(e=>({name:e.name,sets:e.sets.map(x=>({weight:x.w,reps:x.r}))}))})));
   ctx.RECENT_LIFTS=window.Fitness.people().flatMap(p=>window.Strength.sessions(p.id).slice(-5).map(se=>({person:p.name,date:se.date,name:se.name,exercises:se.exercises.filter(e=>e.actual.length).map(e=>({name:e.name,sets:e.actual.map(x=>[x.w,x.r])}))})));}
  if(window.Budget){const B=window.Budget.budget(today.slice(0,7)),$=c=>Math.round(c)/100;ctx.BUDGET_THIS_MONTH={ready_to_assign:$(B.rta),categories:Object.fromEntries(B.cats.filter(c=>B.assigned[c]||B.spent[c]||B.avail[c]).map(c=>[c,{assigned:$(B.assigned[c]||0),spent:$(B.spent[c]||0),available:$(B.avail[c]||0)}]))};
+  try{const fc=window.Budget.forecast(30);if(fc.accounts)ctx.CASH_FORECAST_30_DAYS={cash_today:$(fc.start),lowest:$(fc.low.bal),lowest_date:fc.low.date,in_30_days:$(fc.series.at(-1).bal),everyday_spending_per_day:$(fc.rate),upcoming:fc.events.slice(0,8).map(e=>({date:e.date,what:e.label,amount:$(e.amount)}))};}catch(_){}
   ctx.ACCOUNTS=window.Budget.accounts().filter(a=>!a.closed).map(a=>({name:a.name,type:a.type,balance:$(window.Budget.balance(a))}));ctx.NET_WORTH=$(window.Budget.netWorth());}
  if(window.Grocery)ctx.GROCERY_LIST=window.Grocery.items().map(i=>({name:i.name,qty:i.qty||null,aisle:i.aisle,checked:i.checked}));
  if(window.Fitness){
@@ -112,7 +113,8 @@ function toActions(out){
    const cents=Math.round(Number(a.amount)*100);if(!(cents>0)){errors.push('A money entry had no amount.');continue;}
    const type=a.money_type==='income'?'income':'expense',cats=type==='income'?F.INCOME:F.EXPENSE;
    const note=String(a.note||'').slice(0,140);
-   actions.push({kind:'txn',type,amount:cents,note,category:cats.includes(a.category)?a.category:F.guessCategory(note,type),date:isDate(a.date)?a.date:day()});
+   const P=a.person&&window.Fitness?window.Fitness.person(a.person):null;
+   actions.push({kind:'txn',type,amount:cents,note,category:cats.includes(a.category)?a.category:F.guessCategory(note,type),date:isDate(a.date)?a.date:day(),...(P?{who:P.id,whoName:P.name}:{})});
   }else if(a.kind==='fitness'&&window.Fitness){
    const P=window.Fitness.person(a.person)||(a.person?null:window.Fitness.person());if(!P){errors.push('No family member named “'+a.person+'” in Fitness.');continue;}
    const k=a.fit_type,pos=v=>Number(v)>0?Number(v):null,base={kind:'fit',personId:P.id,who:P.name,date:isDate(a.date)?a.date:day(),fkind:k};
@@ -149,7 +151,8 @@ function toActions(out){
   }else if(a.kind==='bill_paid'&&F){
    const b=F.summary(day().slice(0,7)).bills.find(x=>x.id===a.bill_id);if(!b){errors.push('Could not find that bill.');continue;}
    const cents=Math.round(Number(a.amount)*100);
-   actions.push({kind:'billpaid',id:b.id,title:b.name,amount:cents>0?cents:b.amount,date:isDate(a.date)?a.date:day()});
+   const P=a.person&&window.Fitness?window.Fitness.person(a.person):null;
+   actions.push({kind:'billpaid',id:b.id,title:b.name,amount:cents>0?cents:b.amount,date:isDate(a.date)?a.date:day(),...(P?{who:P.id,whoName:P.name}:{})});
   }
  }
  return {actions,errors,reply:String(out.reply||'').trim()};

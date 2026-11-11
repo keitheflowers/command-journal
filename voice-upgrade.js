@@ -210,6 +210,14 @@ function parseGrocery(part){
 }
 function parseMoney(part){
   if(!window.Finance)return null;
+  // "Sam spent 40 at Target": who spent it
+  let who=null;
+  if(window.Fitness)for(const p of window.Fitness.people()){const n=p.name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    const m=part.match(new RegExp('^'+n+'\\s+(?=(?:spent|spend|paid|bought|purchased|earned|received|got paid|made|deposited|got)\\b)','i'));if(m){who=p;part=part.slice(m[0].length);break;}}
+  const r=parseMoney2(part);if(r&&who&&(r.kind==='txn'||r.kind==='billpaid')){r.who=who.id;r.whoName=who.name;}
+  return r;
+}
+function parseMoney2(part){
   let m=part.match(/^(?:add|log|record)\s+(?:an?\s+)?(expense|income)\s+(?:of\s+)?(.+)$/i),type,rest,verb='';
   if(m){type=m[1].toLowerCase();rest=m[2];}
   else if((m=part.match(/^(spent|spend|paid|pay|bought|purchased)\s+(.+)$/i))){type='expense';verb=m[1].toLowerCase();rest=m[2];}
@@ -239,7 +247,7 @@ function parse(raw){
   line=line.replace(/\s+(?=(?:add|create|make|schedule|complete|completed|finish|finished|mark|move|reschedule|push)\s+(?:a\s+)?(?:task\b|my\b|the\b))/gi,'; ');
   // "...and Sam walked 20 minutes": split before a family member's name followed by an activity
   if(window.Fitness){const fam=window.Fitness.people().map(p=>p.name.toLowerCase().replace(/[^a-z ]/g,'').trim()).filter(Boolean).map(n=>n.replace(/\s+/g,'\\s+'));
-   if(fam.length)line=line.replace(new RegExp('\\b(?:and|then|also)\\s+(?=(?:'+fam.join('|')+')\\s+(?:ran|walked|jogged|biked|swam|lifted|worked out|did|slept|drank|weighs?|weighed|ate|plan)\\b)','gi'),'; ');}
+   if(fam.length)line=line.replace(new RegExp('\\b(?:and|then|also)\\s+(?=(?:'+fam.join('|')+')\\s+(?:ran|walked|jogged|biked|swam|lifted|worked out|did|slept|drank|weighs?|weighed|ate|plan|spent|paid|bought|earned|got paid)\\b)','gi'),'; ');}
   let parts=line.split(/\s*;\s*/).map(x=>x.trim()).filter(Boolean),actions=[],errors=[];
   if(parts.length>12)return {actions,errors:['Maximum 12 instructions per update']};
   for(let part of parts){
@@ -287,7 +295,9 @@ window.interpretCommand=async function(){
   let raw=document.getElementById('command').value.trim();if(!raw)return toast('Speak or type an update.');
   pending=null;window.lastVectorReply='';
   let box=document.getElementById('commandPreview');box.classList.remove('hidden');
-  if(window.Recap&&/(?:weekly|week'?s?|sunday)\s+(?:recap|summary|review|report)|how (?:was|did) (?:my|our|the) week|recap (?:of )?(?:my|our|the) week/i.test(raw)){
+  if(window.Budget&&window.Budget.forecastText&&/\b(?:cash|money)\s+(?:forecast|outlook|looking)|\bforecast\b|run (?:out|low) (?:of|on) (?:money|cash)|how (?:is|are|does) (?:my|our) (?:cash|money|checking)(?: looking)?|will (?:i|we) (?:have enough|be short)/i.test(raw)){
+       const t=window.Budget.forecastText();window.lastVectorReply=t;box.innerHTML='<strong>Vector</strong><p class="hint" style="font-size:14px;color:#e3eef6">'+esc(t)+'</p>';return;}
+      if(window.Recap&&/(?:weekly|week'?s?|sunday)\s+(?:recap|summary|review|report)|how (?:was|did) (?:my|our|the) week|recap (?:of )?(?:my|our|the) week/i.test(raw)){
     const t=window.Recap.text();window.lastVectorReply=t;box.innerHTML=window.Recap.html(false);return;}
   let result=null,usedAI=false,my=++seq;
   if(window.VectorAI&&window.VectorAI.enabled()&&navigator.onLine!==false){
@@ -308,7 +318,7 @@ window.interpretCommand=async function(){
   const SETS=s=>{const g=[];for(const x of s){const t=(x.w==null?'?':x.w===0?'BW':x.w)+'×'+x.r;const l=g.at(-1);if(l&&l.t===t)l.n++;else g.push({t,n:1});}return g.map(x=>x.n>1?x.t+' ×'+x.n:x.t).join(', ');};
   const DN=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const LIFT=a=>{const R=window.Strength.analyze(a.session);return a.session.name+' for '+a.who+' · '+when(a.session.date)+' — '+R.map(r=>r.actual.length?r.name+' '+SETS(r.actual)+(r.planned.length?' (plan '+SETS(r.planned)+')':'')+' '+r.verdict.i+' '+r.verdict.t+(r.delta!=null?' '+(r.delta>=0?'+':'−')+Math.abs(Math.round(r.delta*100))+'%':'')+(r.pr?' 🏆 PR':''):r.name+' skipped').join('; ');};
-  let items=actions.map(a=>a.kind==='budgetmove'?'Budget: move '+$(a.amount)+' from '+a.from+' to '+a.to:a.kind==='budgetassign'?'Budget: assign '+$(a.amount)+' to '+a.to:a.kind==='liftplan'?'Workout plan for '+a.who+': '+a.title+(a.days.length?' ('+a.days.map(d=>DN[d]).join(', ')+')':'')+' — '+a.exercises.map(e=>e.name+' '+SETS(e.sets)).join('; '):a.kind==='liftsession'?LIFT(a):a.kind==='goalnew'?'New savings goal: '+a.title+' · '+$(a.amount)+(a.date?' · by '+when(a.date):''):a.kind==='goaladd'?(a.amount>0?'Savings: +'+$(a.amount)+' → ':'Savings: −'+$(-a.amount)+' from ')+a.title+' · '+when(a.date):a.kind==='grocery'?'Grocery list: '+a.items.map(i=>(i.qty?i.qty+' ':'')+i.name).join(', '):a.kind==='fit'?'Log for '+a.who+': '+FIT(a)+' · '+when(a.date):a.kind==='mealplan'?'Meal plan'+(a.personId&&window.Fitness&&window.Fitness.people().length>1?' for '+window.Fitness.person(a.personId).name:'')+': '+(a.slotName||a.slot)+' '+when(a.date)+' · '+a.note:a.kind==='faststart'?'Fasting: start a '+a.goal+'h fast for '+a.who:a.kind==='fastend'?'Fasting: end '+a.who+'’s fast':a.kind==='txn'?(a.type==='income'?'Income: ':'Expense: ')+$(a.amount)+' · '+a.category+(a.note?' · '+a.note:'')+' · '+when(a.date):a.kind==='billpaid'?'Bill paid: '+a.title+' · '+$(a.amount)+' · '+when(a.date):a.kind==='add'?'Add: '+a.title+' · '+when(a.date)+(a.due?' · due '+when(a.due):'')+' · '+a.priority+' priority · '+a.area:a.kind==='complete'?'Complete: '+a.title:'Move to '+when(a.date)+': '+a.title);
+  let items=actions.map(a=>a.kind==='budgetmove'?'Budget: move '+$(a.amount)+' from '+a.from+' to '+a.to:a.kind==='budgetassign'?'Budget: assign '+$(a.amount)+' to '+a.to:a.kind==='liftplan'?'Workout plan for '+a.who+': '+a.title+(a.days.length?' ('+a.days.map(d=>DN[d]).join(', ')+')':'')+' — '+a.exercises.map(e=>e.name+' '+SETS(e.sets)).join('; '):a.kind==='liftsession'?LIFT(a):a.kind==='goalnew'?'New savings goal: '+a.title+' · '+$(a.amount)+(a.date?' · by '+when(a.date):''):a.kind==='goaladd'?(a.amount>0?'Savings: +'+$(a.amount)+' → ':'Savings: −'+$(-a.amount)+' from ')+a.title+' · '+when(a.date):a.kind==='grocery'?'Grocery list: '+a.items.map(i=>(i.qty?i.qty+' ':'')+i.name).join(', '):a.kind==='fit'?'Log for '+a.who+': '+FIT(a)+' · '+when(a.date):a.kind==='mealplan'?'Meal plan'+(a.personId&&window.Fitness&&window.Fitness.people().length>1?' for '+window.Fitness.person(a.personId).name:'')+': '+(a.slotName||a.slot)+' '+when(a.date)+' · '+a.note:a.kind==='faststart'?'Fasting: start a '+a.goal+'h fast for '+a.who:a.kind==='fastend'?'Fasting: end '+a.who+'’s fast':a.kind==='txn'?(a.type==='income'?'Income: ':'Expense: ')+$(a.amount)+' · '+a.category+(a.note?' · '+a.note:'')+' · '+when(a.date)+(a.whoName?' · 👤 '+a.whoName:''):a.kind==='billpaid'?'Bill paid: '+a.title+' · '+$(a.amount)+' · '+when(a.date)+(a.whoName?' · 👤 '+a.whoName:''):a.kind==='add'?'Add: '+a.title+' · '+when(a.date)+(a.due?' · due '+when(a.due):'')+' · '+a.priority+' priority · '+a.area:a.kind==='complete'?'Complete: '+a.title:'Move to '+when(a.date)+': '+a.title);
   box.innerHTML=(typeof aiErr!=='undefined'&&aiErr?'<p class="hint" style="margin:0 0 8px;color:#ff8a8a">Vector AI didn’t answer: '+esc(aiErr)+' Used the built-in rules instead.</p>':'')+(reply?'<p class="hint" style="margin:0 0 8px;color:#cdeefa">🧠 '+esc(reply)+'</p>':'')+(errors.length?'<p class="hint" style="margin:0 0 8px">Skipped: '+errors.map(esc).join('; ')+'</p>':'')+'<strong>Review '+actions.length+' proposed change(s)</strong><ol>'+items.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ol><div class="actions"><button class="btn sm" onclick="applyPreview()">Confirm all changes</button><button class="btn alt sm" onclick="cancelVoicePreview()">Cancel</button></div><p class="hint">No changes occur before confirmation.</p>';
   pending={raw,actions};
 };
@@ -331,8 +341,8 @@ window.applyPreview=function(){
     else if(a.kind==='mealplan'){window.Fitness.setMeal(a.date,a.slot,a.note,a.personId);}
     else if(a.kind==='faststart'){window.Nutrition.startFast(a.personId,a.goal);}
     else if(a.kind==='fastend'){window.Nutrition.endFast(a.personId);}
-    else if(a.kind==='txn'){window.Finance.addTxn({type:a.type,amount:a.amount,category:a.category,note:a.note,date:a.date});}
-    else if(a.kind==='billpaid'){window.Finance.markBillPaid(a.id,a.date,a.amount);}
+    else if(a.kind==='txn'){window.Finance.addTxn({type:a.type,amount:a.amount,category:a.category,note:a.note,date:a.date,...(a.who?{who:a.who}:{})});}
+    else if(a.kind==='billpaid'){window.Finance.markBillPaid(a.id,a.date,a.amount,a.who);}
     else if(a.kind==='complete'){let t=data.tasks.find(t=>t.id===a.id);t.status='done';t.completed=stamp();log('task_completed',t.id,t.title);}
     else if(a.kind==='move'){let t=data.tasks.find(t=>t.id===a.id);t.scheduled=a.date;t.rollovers=(t.rollovers||0)+1;log('task_moved',t.id,t.title+' → '+a.date);}
     else{let t={id:uuid(),title:a.title,next:'',area:a.area,priority:a.priority,scheduled:a.date,due:a.due||'',notes:'Voice/text command: '+batch.raw,status:'open',created:stamp(),completed:null,rollovers:0};data.tasks.push(t);log('task_created',t.id,t.title);}

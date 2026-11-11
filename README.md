@@ -10,6 +10,8 @@ A working mobile-friendly, offline-first personal task journal prototype. No ext
 - Health → Meals: eating patterns (3 meals, 3 + snacks, 6 small meals, 16:8, 18:6, one meal a day, custom), calorie/macro targets with a Mifflin-St Jeor calculator, food log by meal (recent foods, saved meals, common foods, USDA FoodData Central search, custom, Vector AI estimates), fasting timer with goals, streak and history, meal plan that follows the pattern, grocery list
 - Adaptive targets (Health → Meals): after ~3 weeks of food logs and weigh-ins, estimates your real maintenance from intake vs weight trend and suggests a new calorie target (max ±300/week); one tap applies it
 - Weekly recap: on Sunday/Monday Home shows last week's money, tasks, training (PRs), fitness and nutrition plus next week's bills and focus; say "how was my week"
+- Cash forecast (Money → Forecast): checking/savings/cash over 30/60/90 days from bills, detected paychecks (weekly, every 2 weeks, monthly), recurring charges and average everyday spending; warns before cash dips under your cushion; on the dashboard and by voice ("how is my cash looking")
+- Who spent it: each transaction can belong to a family member (set per phone, by voice "Sam spent 40 at Target", or when editing); filter by person and a by-person spending report
 - Debt payoff (Money → Debt): APR and minimums per card/loan, avalanche vs snowball vs minimums with payoff date, total interest and savings from extra payments
 - Family accounts and cloud sync (Settings → ☁️ Family sync): email sign-in, start a family or join with an invite code, every item synced as its own record with tombstones for deletes; Vector AI can run through the family server so no phone needs an API key. Setup: see `supabase/README.md`
 - Android app (`android-app/`, built by GitHub Actions): phone speech for voice, reminders for bills/tasks/workouts/fasting, Samsung Health via Health Connect, and "Hey Vector" with the app closed (offline Vosk wake word). See `android-app/README.md`
@@ -48,7 +50,7 @@ A web server is needed for service workers and reliable installability. Opening 
 Tasks should eventually sync via an authenticated versioned API that supports unique IDs, append-only event history, per-user namespaces, explicit conflict handling, encrypted storage, and audited AI actions. Avoid embedding an AI provider in the journal's business logic.
 
 ## Tests
-Browser tests cover every area: family sync between two phones (against a fake sync server), the AI proxy, Android extras (reminders, phone speech, Health Connect import, with a fake Capacitor), adaptive targets, weekly recap, debt payoff, first-run setup, tabs, tasks and dates, calendar, hands-free voice, money (budget, accounts, CSV import, rules, splits, recurring, reports, voice), fitness, grocery, savings, strength (parser, progress, programs), backups, app lock (PIN + fingerprint) and Vector AI (mocked API).
+Browser tests cover every area: cash forecast (hand-checked numbers), who spent it, family sync between two phones (against a fake sync server), the AI proxy, Android extras (reminders, phone speech, Health Connect import, with a fake Capacitor), adaptive targets, weekly recap, debt payoff, first-run setup, tabs, tasks and dates, calendar, hands-free voice, money (budget, accounts, CSV import, rules, splits, recurring, reports, voice), fitness, grocery, savings, strength (parser, progress, programs), backups, app lock (PIN + fingerprint) and Vector AI (mocked API).
 
 ```
 npm install

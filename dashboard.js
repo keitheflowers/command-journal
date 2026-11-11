@@ -204,6 +204,7 @@ function render(){
   tiles.push(['Month-end spending pace',$(M.projected,{compact:true}),ref?`<span class="${r>1?'dz-bad':r>.9?'dz-warn':'dz-good'}">${r>1?'⛔ over':r>.9?'⚠️ near':'✅ under'}</span> ${M.budget?'budget '+$(M.budget,{compact:true}):'last month '+$(M.lastSpend,{compact:true})}`:'projected from month to date']);}
  else tiles.push(['Month-end spending pace','—','Shows after day 3 of the month']);
  const due14=M.soon.filter(b=>b.diff>=0);tiles.push(['Bills next 14 days',$(due14.reduce((a,b)=>a+b.amount,0),{compact:true}),due14.length?`${due14.length} bill${due14.length>1?'s':''}${M.soon.some(b=>b.diff<0)?' · <span class="dz-bad">⛔ some late</span>':''}`:'none due']);
+ if(window.Budget&&window.Budget.forecast){try{const fc=window.Budget.forecast(30);if(fc.accounts){const bad=fc.low.bal<0,warn=fc.low.bal<fc.floor;tiles.push(['Lowest cash next 30 days',`<span class="${bad?'dz-bad':warn?'dz-warn':''}">${$(fc.low.bal,{compact:true})}</span>`,fc.low.date===day()?'stays above today':`${bad?'⛔ ':warn?'⚠️ ':''}around ${pd(fc.low.date).toLocaleDateString(undefined,{month:'short',day:'numeric'})} · see Money → Forecast`]);}}catch(_){}}
  const wkNow=M.doneBy[M.thisWeek]||0,wkPrev=M.doneBy[M.weeks[6]]||0;
  tiles.push(['Tasks done this week',String(wkNow),`${M.overdue.length?`<span class="dz-bad">${M.overdue.length} overdue</span> · `:''}${wkNow>=wkPrev?'<span class="dz-good">▲</span>':'<span class="dz-bad">▼</span>'} vs ${wkPrev} last week`]);
  const ins=insights(M),cf=cashFlowChart(M,W),pace=paceChart(M,W),wk=weeksChart(M,W);
