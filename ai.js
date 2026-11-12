@@ -157,30 +157,87 @@ function toActions(out){
  }
  return {actions,errors,reply:String(out.reply||'').trim()};
 }
-async function interpret(text){
- lastNote='';const c=await client();
- const recent=history.slice(-6).map(h=>`${h.role}: ${h.text}`).join('\n');
- const user=`CONTEXT:\n${JSON.stringify(context())}\n\n${recent?'RECENT CONVERSATION:\n'+recent+'\n\n':''}REQUEST:\n${text}`;
+// ---- the "brains": your Vector home server first, then Claude ---------------------
+const K_SRV='vectorServer';
+const srv=()=>{try{return JSON.parse(localStorage.getItem(K_SRV))||{};}catch(_){return {};}};
+const srvReady=()=>{const s=srv();return !!(s.on&&s.url);};
+const claudeReady=()=>store.get(K_ON)==='1'&&(!!store.get(K_KEY)||!!(window.Sync&&window.Sync.serverAi()));
+const JSON_RULE='\n\nRespond with ONLY one JSON object (no markdown, no prose) that matches this JSON Schema:\n';
+function readJSON(txt,who){
+ // local models may think out loud first (<think>…</think>) or wrap JSON in ``` fences
+ txt=String(txt||'').replace(/<think>[\s\S]*?<\/think>/gi,'').replace(/```(?:json)?/gi,'').trim();
+ try{return JSON.parse(txt);}catch(_){const i=txt.indexOf('{'),j=txt.lastIndexOf('}');try{return JSON.parse(txt.slice(i,j+1));}catch(__){throw new Error(who+' returned an unreadable answer.');}}
+}
+function srvBase(){return String(srv().url||'').trim().replace(/\/+$/,'');}
+function mixedContent(u,proto=location.protocol){return proto==='https:'&&/^http:\/\//i.test(u)&&!/^http:\/\/(?:localhost|127\.0\.0\.1)(?::|\/|$)/i.test(u);}
+async function srvFetch(url,body,method='POST'){
+ const s=srv(),h={'content-type':'application/json'};if(s.key)h.Authorization='Bearer '+s.key;
+ if(mixedContent(url))throw new Error('This app runs on a secure (https) address, so the phone blocks plain http:// servers. Give Vector an https address, for example with “tailscale serve” or a Cloudflare Tunnel (see the setup guide).');
+ const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),90000);
+ let r;try{r=await fetch(url,{method,headers:h,body:body==null?undefined:JSON.stringify(body),signal:ctl.signal});}
+ catch(e){throw new Error(e.name==='AbortError'?'Vector took too long to answer (90 s).':'Can’t reach Vector at '+srvBase()+'. Is the server on and reachable from this phone (same Wi-Fi or Tailscale)? It must also allow this app’s address (CORS).');}
+ finally{clearTimeout(tm);}
+ if(r.status===401||r.status===403)throw new Error('Vector rejected the key (HTTP '+r.status+'). Check the key in Settings → Vector home server.');
+ if(r.status===404)throw new Error('Nothing answered at '+url+' (404). Check the address and the server type.');
+ return r;
+}
+const oaiUrl=p=>{const b=srvBase();return (/\/v1$/.test(b)?b:b+'/v1')+p;};
+async function askServer(text,user){
+ const s=srv();let out;
+ if(s.mode==='vector'){
+  // Vector API: your own endpoint gets the request and context, answers {actions, reply}
+  const r=await srvFetch(srvBase(),{app:'family-save',version:1,text,context:context(),history:history.slice(-6),system:SYSTEM,schema:schema()});
+  if(!r.ok)throw new Error('Vector answered HTTP '+r.status+'.');
+  const j=await r.json().catch(()=>{throw new Error('Vector didn’t return JSON.');});
+  out=typeof j.content==='string'?readJSON(j.content,'Vector'):j;
+ }else{
+  // OpenAI-compatible chat (Ollama, LM Studio, llama.cpp, vLLM…)
+  const msgs=[{role:'system',content:SYSTEM+JSON_RULE+JSON.stringify(schema())},{role:'user',content:user}];
+  const body={model:s.model||'qwen3.5',messages:msgs,temperature:0.2,stream:false,response_format:{type:'json_schema',json_schema:{name:'vector_actions',strict:true,schema:schema()}}};
+  let r=await srvFetch(oaiUrl('/chat/completions'),body);
+  if(r.status===400||r.status===422){body.response_format={type:'json_object'};r=await srvFetch(oaiUrl('/chat/completions'),body);}
+  if(r.status===400||r.status===422){delete body.response_format;r=await srvFetch(oaiUrl('/chat/completions'),body);}
+  if(!r.ok){let m='';try{const j=await r.json();m=(j.error&&(j.error.message||j.error))||j.message||'';}catch(_){}throw new Error('Vector answered HTTP '+r.status+(m?': '+m:'')+'.');}
+  const j=await r.json(),msg=j.choices&&j.choices[0]&&j.choices[0].message;
+  if(!msg)throw new Error('Vector’s answer had no message.');
+  out=readJSON(msg.content,'Vector');
+ }
+ return toActions(out);
+}
+async function askClaude(user){
+ const c=await client();
  // Structured output first; if the API rejects the schema (400), retry once
  // with the schema in the instructions and remember to skip it next time.
  const base={model:MODEL,max_tokens:16000,betas:['server-side-fallback-2026-07-01'],fallbacks:'default',messages:[{role:'user',content:user}]};
- const plain=()=>c.beta.messages.create({...base,output_config:{effort:'low'},system:SYSTEM+'\n\nRespond with ONLY one JSON object (no markdown, no prose) that matches this JSON Schema:\n'+JSON.stringify(schema())});
+ const plain=()=>c.beta.messages.create({...base,output_config:{effort:'low'},system:SYSTEM+JSON_RULE+JSON.stringify(schema())});
  let res;
  if(store.get(K_PLAIN)==='1')res=await plain();
  else{try{res=await c.beta.messages.create({...base,output_config:{effort:'low',format:{type:'json_schema',schema:schema()}},system:SYSTEM});}
   catch(e){if(!(sdk&&e instanceof sdk.BadRequestError))throw e;store.set(K_PLAIN,'1');lastNote='Structured output was rejected ('+(e.message||'400')+'); using plain JSON instead.';res=await plain();}}
  if(res.stop_reason==='refusal')throw new Error('The AI declined this request.');
  if(res.stop_reason==='max_tokens')throw new Error('The AI response was cut off.');
- const txt=res.content.filter(b=>b.type==='text').map(b=>b.text).join('');
- let out;try{out=JSON.parse(txt);}catch(_){const i=txt.indexOf('{'),j=txt.lastIndexOf('}');try{out=JSON.parse(txt.slice(i,j+1));}catch(__){throw new Error('The AI returned an unreadable answer.');}}
- const r=toActions(out);
+ return toActions(readJSON(res.content.filter(b=>b.type==='text').map(b=>b.text).join(''),'The AI'));
+}
+async function interpret(text,only){
+ lastNote='';
+ const recent=history.slice(-6).map(h=>`${h.role}: ${h.text}`).join('\n');
+ const user=`CONTEXT:\n${JSON.stringify(context())}\n\n${recent?'RECENT CONVERSATION:\n'+recent+'\n\n':''}REQUEST:\n${text}`;
+ let r=null;
+ if(only!=='claude'&&(only==='server'||srvReady())){
+  try{r=await askServer(text,user);r.brain='🏠 Vector (home server)';}
+  catch(e){if(only==='server'||!claudeReady())throw e;lastNote='Vector home server didn’t answer ('+e.message+') Claude answered instead.';}
+ }
+ if(!r){try{r=await askClaude(user);}catch(e){throw new Error(explain(e));}r.brain='✨ Claude'+(lastNote&&lastNote.startsWith('Vector')?' (Vector didn’t answer)':'');}
+ r.note=lastNote;
  history.push({role:'user',text},{role:'vector',text:r.reply||r.actions.map(a=>a.kind+' '+(a.title||a.note||'')).join('; ')});
  if(history.length>12)history=history.slice(-12);
  return r;
 }
 window.VectorAI={
- enabled:()=>store.get(K_ON)==='1'&&(!!store.get(K_KEY)||!!(window.Sync&&window.Sync.serverAi())),
- interpret:async t=>{try{return await interpret(t);}catch(e){const err=new Error(explain(e));err.cause=e;throw err;}},
+ enabled:()=>srvReady()||claudeReady(),
+ interpret:t=>interpret(t),
+ server:{get:srv,ready:srvReady,blocked:mixedContent,set:v=>{try{localStorage.setItem(K_SRV,JSON.stringify(v));}catch(_){}},test:t=>interpret(t||'What is on my list for today?','server'),
+  models:async()=>{const r=await srvFetch(oaiUrl('/models'),null,'GET');if(!r.ok)return [];const j=await r.json().catch(()=>({}));return (j.data||j.models||[]).map(m=>m.id||m.name).filter(Boolean);}},
  reset:()=>{history=[];}
 };
 
@@ -200,8 +257,35 @@ panel.addEventListener('click',async e=>{
  if(a==='save'){const v=document.getElementById('aiKey').value.trim();if(!/^sk-ant-/.test(v)){draw('That doesn’t look like an Anthropic API key (it should start with sk-ant-).');return;}store.set(K_KEY,v);store.set(K_ON,'1');draw('Key saved and AI turned on. Tap Test to check it.');}
  else if(a==='toggle'){store.set(K_ON,store.get(K_ON)==='1'?'':'1');draw();}
  else if(a==='forget'){if(!confirm('Remove the saved API key from this phone?'))return;store.set(K_KEY,'');store.set(K_ON,'');draw('Key removed.');}
- else if(a==='test'){draw('Testing…');try{const r=await window.VectorAI.interpret('What is on my list for today?');window.VectorAI.reset();draw('✓ Working. Vector says: “'+(r.reply||'OK')+'”'+(lastNote?' ('+lastNote+')':''));}catch(err){draw('✗ '+err.message);}}
+ else if(a==='test'){draw('Testing…');try{const r=await interpret('What is on my list for today?','claude');window.VectorAI.reset();draw('✓ Working. Vector says: “'+(r.reply||'OK')+'”'+(lastNote?' ('+lastNote+')':''));}catch(err){draw('✗ '+err.message);}}
 });
 draw();
 const settings=document.getElementById('settings');settings.insertBefore(panel,settings.firstChild);
+
+// ---- Settings: Vector home server ---------------------------------------------
+const vp=document.createElement('div');vp.className='panel';vp.id='vectorServerPanel';
+function drawV(msg,models){
+ const s=srv(),on=srvReady();
+ vp.innerHTML=`<h2>🏠 Vector home server</h2>
+ <p class="hint">Use your own AI server (for example Qwen through Ollama or LM Studio) as Vector’s brain. Your request and the same summary Claude gets go to <b>your</b> server only. When it can’t be reached, Claude answers if it’s on, then the built-in rules.</p>
+ <label>Server address</label><input id="vsUrl" placeholder="https://vector.your-tailnet.ts.net" value="${esc(s.url||'')}" autocomplete="off">
+ <div class="two"><div><label>Server type</label><select id="vsMode"><option value="openai"${s.mode!=='vector'?' selected':''}>OpenAI-compatible (Ollama, LM Studio, llama.cpp, vLLM)</option><option value="vector"${s.mode==='vector'?' selected':''}>Vector API (my own endpoint)</option></select></div>
+ <div><label>Model</label><input id="vsModel" list="vsModels" value="${esc(s.model||'qwen3.5')}" autocomplete="off"><datalist id="vsModels">${(models||[]).map(m=>`<option value="${esc(m)}">`).join('')}</datalist></div></div>
+ <label>Key (optional)</label><input id="vsKey" type="password" autocomplete="off" placeholder="${s.key?'Saved — type a new one to replace':'Only if your server asks for one'}">
+ <div class="actions" style="margin-top:10px"><button class="btn" data-vs="save">${on?'Save':'Save and turn on'}</button><button class="btn alt" data-vs="test"${s.url?'':' disabled'}>Test</button>${on?'<button class="btn alt sm" data-vs="off">Turn off</button>':''}</div>
+ <p class="hint" id="vsStatus" role="status">${msg?esc(msg):on?'On: Vector answers first.':s.url?'Off.':'Not set up. See the setup guide: docs/vector-server.md in the app’s GitHub repo.'}</p>`;
+}
+vp.addEventListener('click',async e=>{
+ const b=e.target.closest('[data-vs]');if(!b)return;const a=b.dataset.vs,s=srv();
+ if(a==='save'){const url=document.getElementById('vsUrl').value.trim(),k=document.getElementById('vsKey').value.trim();
+  if(!/^https?:\/\/\S+$/i.test(url)){drawV('Enter the full address, starting with https://');return;}
+  const v={...s,url,mode:document.getElementById('vsMode').value,model:document.getElementById('vsModel').value.trim()||'qwen3.5',on:true};if(k)v.key=k;window.VectorAI.server.set(v);
+  drawV(mixedContent(url)?'Saved, but this is an http:// address: phones block those from a secure app. Use an https address (see the guide).':'Saved and turned on. Tap Test.');}
+ else if(a==='off'){window.VectorAI.server.set({...s,on:false});drawV('Turned off. Claude or the built-in rules answer instead.');}
+ else if(a==='test'){drawV('Testing… (a local model can take a while the first time)');let models=[];
+  try{if(s.mode!=='vector')models=await window.VectorAI.server.models().catch(()=>[]);const t0=Date.now(),r=await window.VectorAI.server.test();window.VectorAI.reset();
+   drawV(`✓ Working (${((Date.now()-t0)/1000).toFixed(1)} s). Vector says: “${r.reply||'OK'}”`+(models.length&&s.mode!=='vector'&&!models.includes(s.model||'qwen3.5')?` Note: “${s.model||'qwen3.5'}” isn’t in the server’s model list (${models.slice(0,5).join(', ')}).`:''),models);}
+  catch(err){drawV('✗ '+err.message,models);}}
+});
+drawV();settings.insertBefore(vp,panel.nextSibling);
 })();
