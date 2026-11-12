@@ -4,7 +4,8 @@
   "description": "The Family Save: phone-first family tasks, calendar, money, fitness and voice (static PWA).",
   "scripts": {
     "test": "node tests/run.js",
-    "check": "for f in *.js; do node --check \"$f\" || exit 1; done"
+    "check": "for f in *.js; do node --check \"$f\" || exit 1; done",
+    "test:vector": "python3 -m unittest discover -s vector -p 'test_*.py'"
   },
   "devDependencies": {
     "playwright": "1.63.0"

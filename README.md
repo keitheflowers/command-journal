@@ -14,6 +14,7 @@ A working mobile-friendly, offline-first personal task journal prototype. No ext
 - Who spent it: each transaction can belong to a family member (set per phone, by voice "Sam spent 40 at Target", or when editing); filter by person and a by-person spending report
 - Debt payoff (Money → Debt): APR and minimums per card/loan, avalanche vs snowball vs minimums with payoff date, total interest and savings from extra payments
 - Family accounts and cloud sync (Settings → ☁️ Family sync): email sign-in, start a family or join with an invite code, every item synced as its own record with tombstones for deletes; Vector AI can run through the family server so no phone needs an API key. Setup: see `supabase/README.md`
+- Your own AI on your computer (`vector/`): connect a local model (Qwen through Ollama, LM Studio, Qwen-Agent, Open WebUI...) to the journal through the family server, as an MCP server or OpenAI-style tools. It can brief you, add and complete tasks, log spending, pay bills, write the journal, add groceries and log health; every change is audited. See `vector/README.md`
 - Android app (`android-app/`, built by GitHub Actions): phone speech for voice, reminders for bills/tasks/workouts/fasting, Samsung Health via Health Connect, and "Hey Vector" with the app closed (offline Vosk wake word). See `android-app/README.md`
 - First-run setup (names, family, starting balance, eating pattern, lock/backup) and plain-language Privacy and Terms pages (templates to review before commercial use)
 - Health → Training: rest timer on set completion and a plate calculator; Health → Overview: today's rings (move, protein, sleep, water), fasting and planned workout
@@ -46,15 +47,16 @@ A web server is needed for service workers and reliable installability. Opening 
 - The existing 6 AM/10 PM ChatGPT scheduled check-ins operate separately.
 - Do not use for confidential company data until authenticated storage, encryption, and work/personal boundaries are implemented.
 
-## Later Vector contract
-Tasks should eventually sync via an authenticated versioned API that supports unique IDs, append-only event history, per-user namespaces, explicit conflict handling, encrypted storage, and audited AI actions. Avoid embedding an AI provider in the journal's business logic.
+## The Vector contract
+An outside assistant talks to the journal only through the family's authenticated sync server (`supabase/`): every item is a record with a unique ID, deletes are tombstones, the server stamps who changed what and when, row-level security keeps each family to its own data, and conflicts follow one rule (an unsynced phone change wins). The journal has no AI provider in its business logic: Vector (`vector/`) is whatever model you run, and the app only ever sees records plus "Vector:" entries in the activity log. Still to do: encryption at rest beyond what Supabase provides, and a versioned API surface for third parties.
 
 ## Tests
-Browser tests cover every area: cash forecast (hand-checked numbers), who spent it, family sync between two phones (against a fake sync server), the AI proxy, Android extras (reminders, phone speech, Health Connect import, with a fake Capacitor), adaptive targets, weekly recap, debt payoff, first-run setup, tabs, tasks and dates, calendar, hands-free voice, money (budget, accounts, CSV import, rules, splits, recurring, reports, voice), fitness, grocery, savings, strength (parser, progress, programs), backups, app lock (PIN + fingerprint) and Vector AI (mocked API).
+Browser tests cover every area: cash forecast (hand-checked numbers), who spent it, family sync between two phones (against a fake sync server), the AI proxy, Android extras (reminders, phone speech, Health Connect import, with a fake Capacitor), adaptive targets, weekly recap, debt payoff, first-run setup, tabs, tasks and dates, calendar, hands-free voice, money (budget, accounts, CSV import, rules, splits, recurring, reports, voice), fitness, grocery, savings, strength (parser, progress, programs), backups, app lock (PIN + fingerprint), Vector AI (mocked API) and the Vector bridge (a real phone and the Python client sharing one fake family server). The bridge also has its own Python tests (record shapes, money math, the MCP protocol, the chat loop, the commands).
 
 ```
 npm install
 npx playwright install chromium   # first time only
 npm test                          # or: node tests/run.js money   (filter by name)
+npm run test:vector               # the Python bridge in vector/
 ```
-GitHub Actions runs `npm run check` and `npm test` on every push (`.github/workflows/test.yml`).
+GitHub Actions runs `npm run check`, `npm run test:vector` and `npm test` on every push (`.github/workflows/test.yml`).

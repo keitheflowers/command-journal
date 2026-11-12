@@ -14,4 +14,5 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
       - run: npm run check
+      - run: npm run test:vector   # the Vector bridge (Python, vector/)
       - run: npm test
