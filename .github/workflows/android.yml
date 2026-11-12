@@ -36,9 +36,18 @@ jobs:
       - name: Use the app's permanent signing key (if set up)
         env:
           KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          PW: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           if [ -n "$KS" ]; then
-            echo "$KS" | base64 -d > "$RUNNER_TEMP/app.keystore"
+            # pasted text may carry line breaks or spaces: drop them before decoding
+            if ! printf '%s' "$KS" | tr -d ' \t\r\n' | base64 -d > "$RUNNER_TEMP/app.keystore" 2>/dev/null; then
+              echo "::error::ANDROID_KEYSTORE_BASE64 is not valid base64. Paste the whole contents of keystore.b64 again (one long line, nothing else)."; exit 1
+            fi
+            if ! keytool -list -keystore "$RUNNER_TEMP/app.keystore" -storepass "$PW" -alias "$ALIAS" >/dev/null 2>&1; then
+              echo "::error::The keystore decoded, but ANDROID_KEYSTORE_PASSWORD or ANDROID_KEY_ALIAS does not open it. Check those two secrets against SECRETS-README.txt."; exit 1
+            fi
+            echo "Signing key fingerprint:"; keytool -list -v -keystore "$RUNNER_TEMP/app.keystore" -storepass "$PW" -alias "$ALIAS" | grep 'SHA256:'
             echo "APP_KEYSTORE_FILE=$RUNNER_TEMP/app.keystore" >> "$GITHUB_ENV"
           else
             echo "::warning::No ANDROID_KEYSTORE_BASE64 secret: this APK has a one-off key and cannot update an installed copy. See android-app/README.md (Updates)."
