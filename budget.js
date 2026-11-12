@@ -50,7 +50,8 @@ function budget(M){
  const startCash=f.accounts.filter(a=>a.onBudget).reduce((s,a)=>s+(a.start||0),0);
  let carry={},overspentBefore=0,inflowTo=0,res=null;
  for(let k=first;k<=last;k=addM(k,1)){
-  const spent={},inflow=f.txns.filter(t=>t.type==='income'&&t.date.slice(0,7)===k&&onBudget(t)).reduce((s,t)=>s+t.amount,0);
+  // income, plus balance adjustments from reconciling (a corrected balance changes what there is to budget)
+  const spent={},inflow=f.txns.filter(t=>(t.type==='income'||t.type==='adjust')&&t.date.slice(0,7)===k&&onBudget(t)).reduce((s,t)=>s+t.amount,0);
   for(const t of f.txns)if(t.date.slice(0,7)===k&&onBudget(t))for(const [c,v] of catSpend(t))spent[c]=(spent[c]||0)+v;
   const asg=f.assign[k]||{},avail={};
   for(const c of cats){const prev=carry[c]||0;avail[c]=(prev>0?prev:0)+(asg[c]||0)-(spent[c]||0);}

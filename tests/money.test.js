@@ -17,6 +17,21 @@ function legacy() {
 const pill = (app, c) => app.page.evaluate(c => [...document.querySelectorAll('.bg-row')].find(r => r.querySelector(`[data-c="${c}"]`)).querySelector('.pill').textContent, c);
 
 module.exports = {
+  async 'reconciling a wrong starting balance also corrects Ready to Assign'() {
+    // someone typed the wrong checking balance during setup, then reconciled to the real one
+    const data = { version: 1, events: [], reviews: [], tasks: [], finance: { accounts: [{ id: 'chk', name: 'Checking', type: 'checking', onBudget: true, start: 500000, created: '2026-11-09T12:00:00.000Z' }], txns: [], assign: {}, targets: {}, rules: [], bills: [], goals: [] } };
+    const app = await open({ time: NOV9, data });
+    await app.page.evaluate(() => { localStorage.setItem('moneySub', 'budget'); });
+    await app.tab('finance');
+    assert.eq(await app.page.$eval('.rta .v', e => e.textContent), '$5,000.00', 'wrong setup number in the budget');
+    await app.page.click('[data-sub="accounts"]');
+    app.dialogs.push('1783.32');
+    await app.page.click('[data-a="rec"][data-id="chk"]'); await app.page.waitForTimeout(200);
+    assert.eq(await app.page.evaluate(() => window.Budget.balance(window.Budget.accounts()[0])), 178332, 'checking corrected');
+    await app.page.click('[data-sub="budget"]');
+    assert.eq(await app.page.$eval('.rta .v', e => e.textContent), '$1,783.32', 'Ready to Assign follows the corrected balance');
+    assert.noErrors(app); await app.close();
+  },
   async 'old data migrates without loss'() {
     const app = await open({ time: NOV9, data: legacy() });
     await app.tab('finance');
