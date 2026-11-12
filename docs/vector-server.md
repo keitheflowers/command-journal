@@ -27,14 +27,16 @@ Phones can only call your server if it allows the app's address (CORS) and you d
 VECTOR_KEY=pick-a-long-secret UPSTREAM=http://127.0.0.1:11434 node vector-bridge/server.js
 ```
 
+**On Keith's Vector PC (Windows, Sparkstead):** copy the `vector-bridge` folder anywhere (for example `Documents\vector-bridge`), right-click `Start-Bridge.ps1` → **Run with PowerShell**. It uses the Node that ships with Sparkstead, makes a key the first time and prints it, and forwards to Sparkstead's Ollama on `127.0.0.1:11434`. The bridge listens on **8788**, because Vector's own app already uses 8787. Use model `vector-pilot:9b` (fast) or `vector-pilot:27b` (smarter, slower).
+
 ### 3. A secure address the phone can reach
 The app runs from an `https://` address, so phones refuse plain `http://` servers. The easiest fix is **Tailscale** (free for personal use; works at home and away):
 
 1. Install Tailscale on the home server and on your phone, and sign in to both with the same account.
-2. On the server: `tailscale serve --bg 8787`
+2. On the server: `tailscale serve --bg 8788`
 3. It prints an address like `https://vector.tailnet-name.ts.net`. That's your server address.
 
-(A Cloudflare Tunnel pointing at `http://127.0.0.1:8787` works too and doesn't need an app on the phone. Add Cloudflare Access to keep it private.)
+(A Cloudflare Tunnel pointing at `http://127.0.0.1:8788` works too and doesn't need an app on the phone. Add Cloudflare Access to keep it private.)
 
 ### 4. In the app
 Settings → **🏠 Vector home server**:

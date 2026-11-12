@@ -12,14 +12,14 @@
 //   VECTOR_KEY     required. Paste the same value into the app's "Key" box.
 //   UPSTREAM       model server, default http://127.0.0.1:11434 (Ollama).
 //                  LM Studio: http://127.0.0.1:1234  llama.cpp: http://127.0.0.1:8080
-//   PORT           default 8787
+//   PORT           default 8788 (8787 is taken by Vector's own app on Sparkstead)
 //   ALLOW_ORIGINS  default https://keitheflowers.github.io,https://localhost
 //                  (the website and the Android app)
 const http = require('http');
 
 const KEY = process.env.VECTOR_KEY;
 const UPSTREAM = (process.env.UPSTREAM || 'http://127.0.0.1:11434').replace(/\/+$/, '');
-const PORT = +(process.env.PORT || 8787);
+const PORT = +(process.env.PORT || 8788);
 const ORIGINS = (process.env.ALLOW_ORIGINS || 'https://keitheflowers.github.io,https://localhost').split(',').map(s => s.trim()).filter(Boolean);
 if (!KEY || KEY.length < 12) { console.error('Set VECTOR_KEY to a secret of at least 12 characters.'); process.exit(1); }
 
