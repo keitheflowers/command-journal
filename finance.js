@@ -25,7 +25,7 @@ const KEYWORDS=[
 const INCOME_KEYWORDS=[[/\b(paycheck|salary|work|job|payroll|direct deposit)/i,'Paycheck'],[/\b(refund|return|rebate)/i,'Refund'],[/\b(gift|birthday)/i,'Gift'],[/\b(side|freelance|gig|sold|sale|client)/i,'Side income']];
 
 const money=c=>(c<0?'-':'')+'$'+(Math.abs(c)/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-const cents=v=>{const n=parseFloat(String(v).replace(/[$,\s]/g,''));return isFinite(n)&&n>0?Math.round(n*100):0;};
+const cents=v=>{let s=String(v).trim();s=/,\d{1,2}$/.test(s)&&!/\.\d*,/.test(s.replace(/\.(?=\d{3}(?:\D|$))/g,''))?s.replace(/\.(?=\d{3})/g,'').replace(/,(?=\d{1,2}$)/,'.'):s;const n=parseFloat(s.replace(/[$,\s]/g,''));return isFinite(n)&&n>0?Math.round(n*100):0;};
 const monthOf=d=>d.slice(0,7);
 const ord=n=>n+((n%100>=11&&n%100<=13)?'th':(['th','st','nd','rd'][n%10]||'th'));
 function fin(){

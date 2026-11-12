@@ -15,7 +15,7 @@ const payload=()=>JSON.stringify(FSStore.exportBundle(data,{includeSecrets:ls.ge
 const hasContent=()=>data.tasks.length||(data.finance&&(data.finance.txns||[]).length)||(data.fitness&&(data.fitness.logs||[]).length);
 
 // ---- restore points (IndexedDB) --------------------------------------------
-const LABEL={daily:'Daily','before-restore':'Before a restore','before-import':'Before an import','before-update':'Before an app update','before-family-join':'Before joining a family'};
+const LABEL={daily:'Daily','before-restore':'Before a restore','before-import':'Before an import','before-update':'Before an app update','before-family-join':'Before joining a family','before-balance-fix':'Before fixing a starting balance'};
 let dbp=null;
 function db(){if(dbp)return dbp;dbp=new Promise((res,rej)=>{if(!window.indexedDB)return rej(new Error('No IndexedDB'));const r=indexedDB.open('familysave',1);r.onupgradeneeded=()=>r.result.createObjectStore('snapshots',{keyPath:'id'});r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});return dbp;}
 async function tx(mode,fn){const d=await db();return new Promise((res,rej)=>{const t=d.transaction('snapshots',mode),s=t.objectStore('snapshots');const out=fn(s);t.oncomplete=()=>res(out&&out.result!==undefined?out.result:out);t.onerror=()=>rej(t.error);});}

@@ -39,7 +39,7 @@ function apply(){
   for(const n of draft.family.split(',').map(x=>x.trim()).filter(Boolean).slice(0,8))if(!f.people.some(p=>p.name.toLowerCase()===n.toLowerCase()))f.people.push({id:uuid(),name:n.slice(0,30),goals:{activeMin:150,steps:8000,water:8,sleep:8}});
   if(window.Nutrition){const n=window.Nutrition.N(me.id),P=window.Nutrition.PATTERNS[draft.pattern];if(P){n.pattern=draft.pattern;n.slots=P.slots.map((nm,i)=>({id:'s'+(i+1),name:nm,time:(P.times||[])[i]||''}));if(P.fast)n.fastGoal=P.fast;}}}
  // money
- const c=parseFloat(String(draft.checking).replace(/[$,\s]/g,''));
+ let s=String(draft.checking).trim();s=/,\d{1,2}$/.test(s)&&!/\.\d*,/.test(s.replace(/\.(?=\d{3}(?:\D|$))/g,''))?s.replace(/\.(?=\d{3})/g,'').replace(/,(?=\d{1,2}$)/,'.'):s;const c=parseFloat(s.replace(/[$,\s]/g,''));
  if(isFinite(c)&&window.Budget){const acc=window.Budget.accounts()[0];if(acc&&acc.start===0)acc.start=Math.round(c*100);}
  ls.set(K,'1');persist();
 }

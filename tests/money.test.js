@@ -17,6 +17,34 @@ function legacy() {
 const pill = (app, c) => app.page.evaluate(c => [...document.querySelectorAll('.bg-row')].find(r => r.querySelector(`[data-c="${c}"]`)).querySelector('.pill').textContent, c);
 
 module.exports = {
+  async 'fixing a wrong starting balance removes the old number and its adjustment'() {
+    // setup saved $178,332 instead of $1,783.32, then Reconcile added a -$176,548.68 adjustment
+    const data = { version: 1, events: [], reviews: [], tasks: [], finance: { accounts: [{ id: 'chk', name: 'Checking', type: 'checking', onBudget: true, start: 17833200, created: '2026-11-09T12:00:00.000Z' }],
+      txns: [{ id: 'adj1', type: 'adjust', accountId: 'chk', amount: 178332 - 17833200, date: '2026-11-09', payee: 'Balance adjustment', reviewed: true, created: '' }, { id: 'k1', type: 'expense', accountId: 'chk', amount: 4312, category: 'Groceries', date: '2026-11-09', payee: 'Kroger', reviewed: true, created: '' }], assign: {}, targets: {}, rules: [], bills: [], goals: [] } };
+    const app = await open({ time: NOV9, data });
+    await app.tab('finance');
+    await app.page.click('[data-sub="accounts"]');
+    app.dialogs.push('1783.32'); // the prompt; the "also remove the adjustment?" question is accepted too
+    await app.page.click('[data-a="start"][data-id="chk"]'); await app.page.waitForTimeout(300);
+    const f = (await app.data()).finance;
+    assert.eq(f.accounts[0].start, 178332, 'starting balance replaced');
+    assert.eq(f.txns.map(t => t.id), ['k1'], 'adjustment removed, spending kept');
+    assert.eq(await app.page.evaluate(() => window.Budget.balance(window.Budget.accounts()[0])), 178332 - 4312, 'balance = start minus spending');
+    assert.ok(!/\$17\d,\d{3}|\$178K|176,5/.test(await app.page.$eval('#finance', e => e.textContent)), 'the $178K is gone from the page');
+    await app.page.click('[data-sub="budget"]');
+    assert.eq(await app.page.$eval('.rta .v', e => e.textContent), '$1,783.32', 'budget starts from the corrected number');
+    const snaps = await app.page.evaluate(() => window.Backup.snapshots());
+    assert.ok(snaps.some(x => x.reason === 'before-balance-fix'), 'restore point with the old number kept');
+    assert.noErrors(app); await app.close();
+  },
+  async 'setup reads 1783,32 as $1,783.32, not $178,332'() {
+    const app = await open({ time: NOV9, onboard: true });
+    await app.page.fill('#obMe', 'Keith'); await app.page.click('[data-ob="next"]');
+    await app.page.fill('#obChk', '1783,32'); await app.page.click('[data-ob="next"]');
+    await app.page.click('[data-ob="next"]'); await app.page.click('[data-ob="finish"]'); await app.page.waitForTimeout(200);
+    assert.eq((await app.data()).finance.accounts[0].start, 178332);
+    assert.noErrors(app); await app.close();
+  },
   async 'reconciling a wrong starting balance also corrects Ready to Assign'() {
     // someone typed the wrong checking balance during setup, then reconciled to the real one
     const data = { version: 1, events: [], reviews: [], tasks: [], finance: { accounts: [{ id: 'chk', name: 'Checking', type: 'checking', onBudget: true, start: 500000, created: '2026-11-09T12:00:00.000Z' }], txns: [], assign: {}, targets: {}, rules: [], bills: [], goals: [] } };
