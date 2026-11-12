@@ -14,6 +14,9 @@ const ls={get:k=>{try{return localStorage.getItem(k);}catch(_){return null;}},se
 const readJ=(k,d)=>{try{return JSON.parse(ls.get(k))||d;}catch(_){return d;}};
 let typed={},st=readJ(KS,{}),shadow=readJ(KH,{}),busy=null,timer=null,lastErr='',lastAt=null;
 const save=()=>ls.set(KS,JSON.stringify(st)),saveShadow=()=>ls.set(KH,JSON.stringify(shadow));
+// tells private parts of the app (Vector's chat memory) the moment the account or family changes
+const who=()=>configured()&&st.session&&st.session.user&&st.session.user.id?{userId:String(st.session.user.id),householdId:st.household&&st.household.id?String(st.household.id):null}:null;
+const idChanged=()=>{try{window.dispatchEvent(new Event('fs-identity'));}catch(_){}};
 
 // ---- server --------------------------------------------------------------
 function cfg(){const c=window.FS_CONFIG||{};return {url:String(c.supabaseUrl||st.url||'').trim().replace(/\/+$/,''),anon:String(c.supabaseAnonKey||st.anon||'').trim(),fixed:!!(c.supabaseUrl&&c.supabaseAnonKey)};}
@@ -29,16 +32,16 @@ async function api(path,{method='GET',body,auth=true,headers={}}={}){
  if(!r.ok){let m=j&&(j.msg||j.message||j.error_description||j.error)||('HTTP '+r.status);if(typeof m!=='string')m=JSON.stringify(m);const e=new Error(m);e.status=r.status;throw e;}
  return j;
 }
-function keep(s){st.session={access_token:s.access_token,refresh_token:s.refresh_token,expires_at:s.expires_at||Math.floor(Date.now()/1000)+(s.expires_in||3600),user:{id:s.user&&s.user.id,email:s.user&&s.user.email}};save();}
+function keep(s){st.session={access_token:s.access_token,refresh_token:s.refresh_token,expires_at:s.expires_at||Math.floor(Date.now()/1000)+(s.expires_in||3600),user:{id:s.user&&s.user.id,email:s.user&&s.user.email}};save();idChanged();}
 async function token(){
  const s=st.session;if(!s)throw new Error('Sign in to Family Save first.');
  if(s.expires_at-60>Date.now()/1000)return s.access_token;
  try{keep(await api('/auth/v1/token?grant_type=refresh_token',{method:'POST',auth:false,body:{refresh_token:s.refresh_token}}));}
- catch(e){if(e.status>=400&&e.status<500){st.session=null;save();draw();throw new Error('Your sign-in expired. Please sign in again.');}throw e;}
+ catch(e){if(e.status>=400&&e.status<500){st.session=null;save();idChanged();draw();throw new Error('Your sign-in expired. Please sign in again.');}throw e;}
  return st.session.access_token;
 }
 const one=r=>Array.isArray(r)?r[0]||null:r;
-function setHH(h){st.household=h&&h.id?{id:h.id,name:h.name,code:h.invite_code}:null;save();}
+function setHH(h){st.household=h&&h.id?{id:h.id,name:h.name,code:h.invite_code}:null;save();idChanged();}
 const resetSync=()=>{shadow={};saveShadow();st.cursor=null;save();};
 
 async function signIn(email,pw){keep(await api('/auth/v1/token?grant_type=password',{method:'POST',auth:false,body:{email,password:pw}}));setHH(one(await api('/rest/v1/rpc/my_household',{method:'POST',body:{}})));if(st.household){resetSync();await syncNow();}}
@@ -49,7 +52,7 @@ async function joinFamily(code,replace){
  resetSync();if(replace){if(window.Backup)try{await Backup.snapshot('before-family-join');}catch(_){}wipeLocal();}await syncNow();
 }
 async function newCode(){const c=await api('/rest/v1/rpc/new_invite_code',{method:'POST',body:{p_household:st.household.id}});st.household.code=typeof c==='string'?c:one(c);save();}
-function signOut(){st.session=null;st.household=null;resetSync();ls.set(K_AI,null);save();}
+function signOut(){st.session=null;st.household=null;resetSync();ls.set(K_AI,null);save();idChanged();}
 
 // ---- local data <-> records ---------------------------------------------
 const isColl=a=>Array.isArray(a)&&a.every(x=>x&&typeof x==='object'&&!Array.isArray(x)&&(typeof x.id==='string'||typeof x.id==='number'));
@@ -185,6 +188,7 @@ const settings=document.getElementById('settings');settings.insertBefore(panel,s
 window.Sync={
  configured,signedIn,ready,syncNow,signIn,signUp,createFamily,joinFamily,signOut,token,
  status:()=>({household:st.household,email:st.session&&st.session.user.email,lastAt,lastErr}),
+ identity:who,
  serverAi:()=>ready()&&ls.get(K_AI)==='1',
  proxyUrl:()=>cfg().url+'/functions/v1/claude-proxy',
  anonKey:()=>cfg().anon,

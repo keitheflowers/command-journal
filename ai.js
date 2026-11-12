@@ -9,7 +9,11 @@ const MODEL='claude-opus-5-5';
 const SDK_URL='./vendor/anthropic-sdk-0.137.0.js';
 const K_KEY='vectorAiKey',K_ON='vectorAiOn',K_PLAIN='vectorAiPlain';let lastNote='';
 const store={get:k=>{try{return localStorage.getItem(k)||'';}catch(_){return '';}},set:(k,v)=>{try{v?localStorage.setItem(k,v):localStorage.removeItem(k);}catch(_){}}};
-let sdk=null,history=[],proxied=false;
+let sdk=null,proxied=false;
+const inflight=new Set();
+const cancelled=()=>{const e=new Error('Cancelled because the account changed.');e.cancelled=true;return e;};
+// the account or family changed: stop every request that is still waiting
+window.addEventListener('vector-chat-switch',()=>{for(const c of inflight)c.abort('switch');inflight.clear();});
 
 const SYSTEM=`You are Vector, the assistant inside The Family Save, a family task and home-finance app.
 The user speaks or types requests. Turn each request into a list of proposed changes, and/or a short spoken reply.
@@ -173,20 +177,20 @@ function mixedContent(u,proto=location.protocol){return proto==='https:'&&/^http
 async function srvFetch(url,body,method='POST'){
  const s=srv(),h={'content-type':'application/json'};if(s.key)h.Authorization='Bearer '+s.key;
  if(mixedContent(url))throw new Error('This app runs on a secure (https) address, so the phone blocks plain http:// servers. Give Vector an https address, for example with “tailscale serve” or a Cloudflare Tunnel (see the setup guide).');
- const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),90000);
+ const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort('timeout'),90000);inflight.add(ctl);
  let r;try{r=await fetch(url,{method,headers:h,body:body==null?undefined:JSON.stringify(body),signal:ctl.signal});}
- catch(e){throw new Error(e.name==='AbortError'?'Vector took too long to answer (90 s).':'Can’t reach Vector at '+srvBase()+'. Is the server on and reachable from this phone (same Wi-Fi or Tailscale)? It must also allow this app’s address (CORS).');}
- finally{clearTimeout(tm);}
+ catch(e){if(ctl.signal.reason==='switch')throw cancelled();throw new Error(e.name==='AbortError'||ctl.signal.aborted?'Vector took too long to answer (90 s).':'Can’t reach Vector at '+srvBase()+'. Is the server on and reachable from this phone (same Wi-Fi or Tailscale)? It must also allow this app’s address (CORS).');}
+ finally{clearTimeout(tm);inflight.delete(ctl);}
  if(r.status===401||r.status===403)throw new Error('Vector rejected the key (HTTP '+r.status+'). Check the key in Settings → Vector home server.');
  if(r.status===404)throw new Error('Nothing answered at '+url+' (404). Check the address and the server type.');
  return r;
 }
 const oaiUrl=p=>{const b=srvBase();return (/\/v1$/.test(b)?b:b+'/v1')+p;};
-async function askServer(text,user){
+async function askServer(text,user,items=[]){
  const s=srv();let out;
  if(s.mode==='vector'){
   // Vector API: your own endpoint gets the request and context, answers {actions, reply}
-  const r=await srvFetch(srvBase(),{app:'family-save',version:1,text,context:context(),history:history.slice(-6),system:SYSTEM,schema:schema()});
+  const r=await srvFetch(srvBase(),{app:'family-save',version:1,text,context:context(),history:items.flatMap(x=>[{role:'user',text:x.text},{role:'vector',text:x.reply}]),system:SYSTEM,schema:schema()});
   if(!r.ok)throw new Error('Vector answered HTTP '+r.status+'.');
   const j=await r.json().catch(()=>{throw new Error('Vector didn’t return JSON.');});
   out=typeof j.content==='string'?readJSON(j.content,'Vector'):j;
@@ -218,27 +222,42 @@ async function askClaude(user){
  if(res.stop_reason==='max_tokens')throw new Error('The AI response was cut off.');
  return toActions(readJSON(res.content.filter(b=>b.type==='text').map(b=>b.text).join(''),'The AI'));
 }
-async function interpret(text,only){
+async function interpret(text,only,opts={}){
  lastNote='';
- const recent=history.slice(-6).map(h=>`${h.role}: ${h.text}`).join('\n');
- const user=`CONTEXT:\n${JSON.stringify(context())}\n\n${recent?'RECENT CONVERSATION:\n'+recent+'\n\n':''}REQUEST:\n${text}`;
- let r=null;
- if(only!=='claude'&&(only==='server'||srvReady())){
-  try{r=await askServer(text,user);r.brain='🏠 Vector (home server)';}
-  catch(e){if(only==='server'||!claudeReady())throw e;lastNote='Vector home server didn’t answer ('+e.message+') Claude answered instead.';}
+ // chat requests use this person's saved conversation; tool requests (grocery, nutrition, recap) don't
+ const chat=!!(opts.chat&&window.VectorChat),ticket=chat?window.VectorChat.begin():null;
+ const req=chat?window.VectorChat.redact(text):text;
+ const ctxJSON=JSON.stringify(context()),useSrv=only!=='claude'&&(only==='server'||srvReady());
+ let mem={text:'',items:[],included:0,total:0,omitted:0};
+ if(chat){
+  const used=(SYSTEM+JSON_RULE+JSON.stringify(schema())).length+ctxJSON.length+req.length;
+  mem=await window.VectorChat.context(ticket,req,window.VectorChat.historyBudget(useSrv?(srv().model||'qwen3.5'):MODEL,!useSrv,used));
+  if(!window.VectorChat.valid(ticket))throw cancelled();
  }
+ const user=`CONTEXT:\n${ctxJSON}\n\n${mem.text?mem.text+'\n\n':''}REQUEST:\n${req}`;
+ let r=null;
+ if(useSrv){
+  try{r=await askServer(req,user,mem.items);r.brain='🏠 Vector (home server)';}
+  catch(e){if(e.cancelled||only==='server'||!claudeReady())throw e;lastNote='Vector home server didn’t answer ('+e.message+') Claude answered instead.';}
+ }
+ if(chat&&!window.VectorChat.valid(ticket))throw cancelled();
  if(!r){try{r=await askClaude(user);}catch(e){throw new Error(explain(e));}r.brain='✨ Claude'+(lastNote&&lastNote.startsWith('Vector')?' (Vector didn’t answer)':'');}
  r.note=lastNote;
- history.push({role:'user',text},{role:'vector',text:r.reply||r.actions.map(a=>a.kind+' '+(a.title||a.note||'')).join('; ')});
- if(history.length>12)history=history.slice(-12);
+ if(chat){
+  if(!window.VectorChat.valid(ticket))throw cancelled(); // a late reply for someone who has signed out or switched
+  r.memory={included:mem.included,total:mem.total,omitted:mem.omitted};
+  r.turn=await window.VectorChat.record(ticket,req,r);
+  if(!r.turn&&!window.VectorChat.valid(ticket))throw cancelled();
+ }
  return r;
 }
 window.VectorAI={
  enabled:()=>srvReady()||claudeReady(),
  interpret:t=>interpret(t),
+ chat:t=>interpret(t,undefined,{chat:true}),
  server:{get:srv,ready:srvReady,blocked:mixedContent,set:v=>{try{localStorage.setItem(K_SRV,JSON.stringify(v));}catch(_){}},test:t=>interpret(t||'What is on my list for today?','server'),
   models:async()=>{const r=await srvFetch(oaiUrl('/models'),null,'GET');if(!r.ok)return [];const j=await r.json().catch(()=>({}));return (j.data||j.models||[]).map(m=>m.id||m.name).filter(Boolean);}},
- reset:()=>{history=[];}
+ reset:()=>{} // tests and tool prompts are not remembered, so there is nothing to clear
 };
 
 // ---- Settings panel ---------------------------------------------------

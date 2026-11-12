@@ -302,12 +302,13 @@ window.interpretCommand=async function(){
   let result=null,usedAI=false,my=++seq;
   if(window.VectorAI&&window.VectorAI.enabled()&&navigator.onLine!==false){
     box.innerHTML='<strong>🧠 Vector is thinking…</strong>';
-    var aiErr='';try{result=await window.VectorAI.interpret(raw);usedAI=true;}catch(e){aiErr=e.message;toast(e.message+' Using built-in rules.');}
+    var aiErr='';try{result=await (window.VectorAI.chat||window.VectorAI.interpret)(raw);usedAI=true;}catch(e){if(e.cancelled){if(my===seq)box.classList.add('hidden');return;}aiErr=e.message;toast(e.message+' Using built-in rules.');}
     if(my!==seq||document.getElementById('command').value.trim()!==raw)return; // superseded or edited meanwhile
   }
   if(!result)result=parse(raw);
   let actions=result.actions,errors=result.errors,reply=result.reply||'';
-  const brain=usedAI&&result.brain?'<p class="hint" style="margin:0 0 6px;font-size:11.5px">'+esc(result.brain)+(result.note&&/^Vector/.test(result.note)?' · '+esc(result.note):'')+'</p>':'';
+  const M=result.memory,memNote=usedAI&&M&&M.total?' · '+(M.omitted?'saw '+M.included+' of '+M.total+' earlier exchanges':'remembers this conversation ('+M.total+')'):'';
+  const brain=usedAI&&result.brain?'<p class="hint" style="margin:0 0 6px;font-size:11.5px">'+esc(result.brain)+esc(memNote)+(result.note&&/^Vector/.test(result.note)?' · '+esc(result.note):'')+'</p>':'';
   if(!actions.length){
     if(reply){window.lastVectorReply=reply;box.innerHTML=brain+'<strong>Vector</strong><p class="hint" style="font-size:14px;color:#e3eef6">'+esc(reply)+'</p>'+(errors.length?'<p class="hint">'+errors.map(esc).join('; ')+'</p>':'');return;}
     box.innerHTML='<strong>No changes made.</strong><p class="hint">'+errors.map(esc).join('; ')+'</p>'+(typeof aiErr!=='undefined'&&aiErr?'<p class="hint" style="color:#ff8a8a">Vector AI didn’t answer: '+esc(aiErr)+'</p>':'');return;
@@ -321,7 +322,7 @@ window.interpretCommand=async function(){
   const LIFT=a=>{const R=window.Strength.analyze(a.session);return a.session.name+' for '+a.who+' · '+when(a.session.date)+' — '+R.map(r=>r.actual.length?r.name+' '+SETS(r.actual)+(r.planned.length?' (plan '+SETS(r.planned)+')':'')+' '+r.verdict.i+' '+r.verdict.t+(r.delta!=null?' '+(r.delta>=0?'+':'−')+Math.abs(Math.round(r.delta*100))+'%':'')+(r.pr?' 🏆 PR':''):r.name+' skipped').join('; ');};
   let items=actions.map(a=>a.kind==='budgetmove'?'Budget: move '+$(a.amount)+' from '+a.from+' to '+a.to:a.kind==='budgetassign'?'Budget: assign '+$(a.amount)+' to '+a.to:a.kind==='liftplan'?'Workout plan for '+a.who+': '+a.title+(a.days.length?' ('+a.days.map(d=>DN[d]).join(', ')+')':'')+' — '+a.exercises.map(e=>e.name+' '+SETS(e.sets)).join('; '):a.kind==='liftsession'?LIFT(a):a.kind==='goalnew'?'New savings goal: '+a.title+' · '+$(a.amount)+(a.date?' · by '+when(a.date):''):a.kind==='goaladd'?(a.amount>0?'Savings: +'+$(a.amount)+' → ':'Savings: −'+$(-a.amount)+' from ')+a.title+' · '+when(a.date):a.kind==='grocery'?'Grocery list: '+a.items.map(i=>(i.qty?i.qty+' ':'')+i.name).join(', '):a.kind==='fit'?'Log for '+a.who+': '+FIT(a)+' · '+when(a.date):a.kind==='mealplan'?'Meal plan'+(a.personId&&window.Fitness&&window.Fitness.people().length>1?' for '+window.Fitness.person(a.personId).name:'')+': '+(a.slotName||a.slot)+' '+when(a.date)+' · '+a.note:a.kind==='faststart'?'Fasting: start a '+a.goal+'h fast for '+a.who:a.kind==='fastend'?'Fasting: end '+a.who+'’s fast':a.kind==='txn'?(a.type==='income'?'Income: ':'Expense: ')+$(a.amount)+' · '+a.category+(a.note?' · '+a.note:'')+' · '+when(a.date)+(a.whoName?' · 👤 '+a.whoName:''):a.kind==='billpaid'?'Bill paid: '+a.title+' · '+$(a.amount)+' · '+when(a.date)+(a.whoName?' · 👤 '+a.whoName:''):a.kind==='add'?'Add: '+a.title+' · '+when(a.date)+(a.due?' · due '+when(a.due):'')+' · '+a.priority+' priority · '+a.area:a.kind==='complete'?'Complete: '+a.title:'Move to '+when(a.date)+': '+a.title);
   box.innerHTML=brain+(typeof aiErr!=='undefined'&&aiErr?'<p class="hint" style="margin:0 0 8px;color:#ff8a8a">Vector AI didn’t answer: '+esc(aiErr)+' Used the built-in rules instead.</p>':'')+(reply?'<p class="hint" style="margin:0 0 8px;color:#cdeefa">🧠 '+esc(reply)+'</p>':'')+(errors.length?'<p class="hint" style="margin:0 0 8px">Skipped: '+errors.map(esc).join('; ')+'</p>':'')+'<strong>Review '+actions.length+' proposed change(s)</strong><ol>'+items.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ol><div class="actions"><button class="btn sm" onclick="applyPreview()">Confirm all changes</button><button class="btn alt sm" onclick="cancelVoicePreview()">Cancel</button></div><p class="hint">No changes occur before confirmation.</p>';
-  pending={raw,actions};
+  pending={raw,actions,turn:usedAI?result.turn:null};
 };
 window.cancelVoicePreview=function(){pending=null;document.getElementById('commandPreview').classList.add('hidden');};
 window.applyPreview=function(){
@@ -348,7 +349,10 @@ window.applyPreview=function(){
     else if(a.kind==='move'){let t=data.tasks.find(t=>t.id===a.id);t.scheduled=a.date;t.rollovers=(t.rollovers||0)+1;log('task_moved',t.id,t.title+' → '+a.date);}
     else{let t={id:uuid(),title:a.title,next:'',area:a.area,priority:a.priority,scheduled:a.date,due:a.due||'',notes:'Voice/text command: '+batch.raw,status:'open',created:stamp(),completed:null,rollovers:0};data.tasks.push(t);log('task_created',t.id,t.title);}
   }
+  if(batch.turn&&window.VectorChat)window.VectorChat.markConfirmed(batch.turn);
   document.getElementById('command').value='';document.getElementById('commandPreview').classList.add('hidden');persist();window.lastSaveSummary=summaries.join(' ');toast(summaries.length?summaries[0]:batch.actions.length+(batch.actions.length===1?' change':' changes')+' saved.');
 };
 document.getElementById('command').addEventListener('input',()=>{pending=null;document.getElementById('commandPreview').classList.add('hidden');});
+// signed out, or another account or family: forget what's on screen and ignore replies still on their way
+window.addEventListener('vector-chat-switch',()=>{seq++;pending=null;window.lastVectorReply='';document.getElementById('command').value='';document.getElementById('commandPreview').classList.add('hidden');});
 })();

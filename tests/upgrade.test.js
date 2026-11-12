@@ -9,13 +9,14 @@ const { assert, ROOT } = require('./harness');
 
 const OLD_REF = process.env.OLD_REF || '704b460'; // last published version before safe updates
 const KEY = 'command_journal_v1';
-let oldDir = null;
-function oldApp() {
-  if (oldDir) return oldDir;
+const RELEASE_REF = process.env.RELEASE_REF || '6a9a370'; // last published version before chat memory
+const oldDirs = {};
+function oldApp(ref = OLD_REF) {
+  if (oldDirs[ref]) return oldDirs[ref];
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fs-old-'));
-  const tar = execFileSync('git', ['-C', ROOT, 'archive', OLD_REF], { maxBuffer: 1 << 28 });
+  const tar = execFileSync('git', ['-C', ROOT, 'archive', ref], { maxBuffer: 1 << 28 });
   execFileSync('tar', ['-x', '-C', dir], { input: tar });
-  return (oldDir = dir);
+  return (oldDirs[ref] = dir);
 }
 
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
@@ -40,7 +41,7 @@ async function phone() {
   return {
     s, page, errors,
     async run(version, setup) { // open the given version, optionally seeding storage first
-      s.root = version === 'old' ? oldApp() : ROOT;
+      s.root = version === 'old' ? oldApp() : version === 'release' ? oldApp(RELEASE_REF) : ROOT;
       if (setup) { await page.goto(s.url + 'privacy.html'); await page.evaluate(setup.fn, setup.arg); }
       await page.goto(s.url); await page.waitForTimeout(700);
     },
@@ -224,6 +225,28 @@ module.exports = {
       await p.page.evaluate(() => { document.getElementById('command').value = 'add task one more thing'; return interpretCommand().then(() => applyPreview()); });
       assert.eq((await p.local())[KEY], before, 'saved data untouched');
       assert.match(await p.page.$eval('#updateNotice', e => e.textContent), /storage is full/i, 'person is told');
+    } finally { await p.close(); }
+  },
+
+  async 'update to chat memory: journal, settings and Vector connection untouched; memory starts empty and private'() {
+    const p = await phone();
+    try {
+      await p.page.route('https://vectorcore.tailnet.ts.net/**', r => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ choices: [{ message: { content: '{"reply":"Hi","actions":[]}' } }] }) }));
+      await p.run('release', seed(sampleFamily()));
+      const before = await p.journal(), beforeLocal = await p.local();
+      assert.eq(before.schemaVersion, 2, 'release already on schema 2');
+      await p.run('new');
+      const after = await p.journal(), local = await p.local();
+      assert.eq(after, before, 'journal unchanged by the update');
+      for (const k of Object.keys(SETTINGS)) assert.eq(local[k], beforeLocal[k], 'setting kept: ' + k);
+      assert.ok(!local.fsUpdateBackup, 'no data migration needed');
+      assert.eq(p.errors, [], 'no page errors');
+      await p.page.evaluate(() => { document.getElementById('command').value = 'hello Vector'; return interpretCommand(); });
+      assert.match(await p.page.$eval('#commandPreview', e => e.textContent), /Hi/, 'the saved Vector connection still works');
+      assert.eq(await p.journal(), after, 'chatting does not touch the journal');
+      assert.ok(!JSON.stringify(await p.journal()).includes('hello Vector'), 'chat kept out of the journal (so out of sync and backups)');
+      await p.run('new'); // restart
+      assert.match(await p.page.$eval('#vcBar', e => e.textContent), /1 exchange remembered/, 'memory survives restart');
     } finally { await p.close(); }
   },
 };

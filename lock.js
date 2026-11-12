@@ -70,7 +70,7 @@ screen.addEventListener('click',e=>{
  else if(k==='forgot'){
   if(ls.get(K.cred)){draw('Use your fingerprint 👆, then change the PIN in Settings.');tryBio();return;}
   if(confirm('There is no way to recover a forgotten PIN; that is what keeps the app private.\n\nThe only option is to erase everything on this phone and restore from a backup file. Continue?')){
-   const t=prompt('Type ERASE to delete all Family Save data on this phone.');if(t==='ERASE'){try{localStorage.clear();indexedDB.deleteDatabase('familysave');}catch(_){}location.reload();}}
+   const t=prompt('Type ERASE to delete all Family Save data on this phone.');if(t==='ERASE'){try{localStorage.clear();indexedDB.deleteDatabase('familysave');indexedDB.deleteDatabase('familysave-chat');}catch(_){}location.reload();}}
  }
 });
 document.addEventListener('keydown',e=>{if(!locked)return;if(/^\d$/.test(e.key))screen.querySelector(`[data-lk="${e.key}"]`)?.click();else if(e.key==='Backspace')screen.querySelector('[data-lk="del"]').click();});

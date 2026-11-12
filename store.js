@@ -15,7 +15,7 @@
 (function(){
 'use strict';
 const KEY='command_journal_v1',UPD='fsUpdateBackup',BAD='command_journal_v1__unreadable',SCHEMA=2;
-const SETTINGS=['onboardDone','navLast','moneySub','fsMe','recapDismissed','wakeAuto','vectorAiOn','vectorAiPlain','backupLast','backupSnooze','lockAfter'];
+const SETTINGS=['onboardDone','navLast','moneySub','fsMe','recapDismissed','wakeAuto','vectorAiOn','vectorAiPlain','backupLast','backupSnooze','lockAfter','vectorCtx'];
 const SECRETS=['vectorAiKey','usdaKey']; // vectorServer.key is split out below
 const get=k=>{try{return localStorage.getItem(k);}catch(_){return null;}};
 const parse=s=>{if(s==null)return undefined;try{return JSON.parse(s);}catch(_){return undefined;}};
