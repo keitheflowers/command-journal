@@ -17,7 +17,7 @@ function fit(){
  for(const p of f.people)p.goals={...DEF_GOALS,...(p.goals||{})};
  return f;
 }
-const save=()=>{localStorage.setItem(KEY,JSON.stringify(data));};
+const save=()=>{window.FSStore?FSStore.save(data):localStorage.setItem(KEY,JSON.stringify(data));};
 function person(nameOrId){
  const f=fit();if(!nameOrId)return f.people[0];
  const q=String(nameOrId).toLowerCase().trim();

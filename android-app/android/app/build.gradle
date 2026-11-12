@@ -7,8 +7,9 @@ android {
         applicationId "app.familysave"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0.0"
+        // CI passes a number that goes up with every build, so phones accept each update.
+        versionCode((System.getenv("APP_VERSION_CODE") ?: "1").toInteger())
+        versionName "1.0." + (System.getenv("APP_VERSION_CODE") ?: "0")
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +17,26 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // One signing key for every build. Android only installs an update over the
+    // old app (keeping its data) when the key matches. The key comes from GitHub
+    // secrets and is never stored in the repo.
+    def ks = System.getenv("APP_KEYSTORE_FILE")
+    signingConfigs {
+        stable {
+            if (ks && file(ks).exists()) {
+                storeFile file(ks)
+                storePassword System.getenv("APP_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("APP_KEY_ALIAS")
+                keyPassword System.getenv("APP_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
+        debug {
+            if (ks && file(ks).exists()) signingConfig signingConfigs.stable
+        }
         release {
+            if (ks && file(ks).exists()) signingConfig signingConfigs.stable
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

@@ -130,7 +130,7 @@ function renderFinance(){
  <p class="hint" style="padding:0 4px">Your money data stays on this phone and is included in Settings → Export JSON backup. Voice entries go through Google speech recognition, so avoid saying account numbers.</p>`;
 }
 section.addEventListener('change',e=>{
- const k=e.target.dataset.budget;if(!k)return;const v=cents(e.target.value);const f=fin();if(v)f.budgets[k]=v;else delete f.budgets[k];localStorage.setItem(KEY,JSON.stringify(data));
+ const k=e.target.dataset.budget;if(!k)return;const v=cents(e.target.value);const f=fin();if(v)f.budgets[k]=v;else delete f.budgets[k];FSStore.save(data);
 });
 section.addEventListener('click',e=>{
  const b=e.target.closest('[data-f]');if(!b)return;const a=b.dataset.f,f=fin();

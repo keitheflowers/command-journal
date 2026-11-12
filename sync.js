@@ -46,7 +46,7 @@ async function signUp(email,pw){const r=await api('/auth/v1/signup',{method:'POS
 async function createFamily(name){setHH(one(await api('/rest/v1/rpc/create_household',{method:'POST',body:{p_name:name||'Family'}})));resetSync();await syncNow();}
 async function joinFamily(code,replace){
  setHH(one(await api('/rest/v1/rpc/join_household',{method:'POST',body:{p_code:String(code).trim().toUpperCase()}})));
- resetSync();if(replace)wipeLocal();await syncNow();
+ resetSync();if(replace){if(window.Backup)try{await Backup.snapshot('before-family-join');}catch(_){}wipeLocal();}await syncNow();
 }
 async function newCode(){const c=await api('/rest/v1/rpc/new_invite_code',{method:'POST',body:{p_household:st.household.id}});st.household.code=typeof c==='string'?c:one(c);save();}
 function signOut(){st.session=null;st.household=null;resetSync();ls.set(K_AI,null);save();}
@@ -81,7 +81,7 @@ function removeLocal(c,id){
  if(c==='_doc'){const [a,b]=id.split('.');if(b==null){if(!['tasks','events','reviews'].includes(a))delete data[a];}else if(data[a])delete data[a][b];return;}
  const A=arr(c,false);if(!A)return;const i=A.findIndex(x=>String(x.id)===id);if(i>=0)A.splice(i,1);
 }
-function wipeLocal(){for(const k of Object.keys(data))if(k!=='version')delete data[k];data.tasks=[];data.events=[];data.reviews=[];}
+function wipeLocal(){for(const k of Object.keys(data))if(k!=='version'&&k!=='schemaVersion')delete data[k];data.tasks=[];data.events=[];data.reviews=[];}
 function applyRow(r){
  const k=r.collection+SEP+r.id,cur=getLocal(r.collection,r.id),lh=cur===undefined?undefined:hash(cur),sh=shadow[k];
  if(sh!==undefined&&lh!==sh)return false; // changed here and not sent yet: this phone's change wins
